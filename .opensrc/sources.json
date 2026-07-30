@@ -1,0 +1,35 @@
+{
+  "updatedAt": "2026-07-27T14:42:16.277381+00:00",
+  "repos": [
+    {
+      "name": "github.com/emilkowalski/skills",
+      "version": "main",
+      "path": "repos/github.com/emilkowalski/skills/main",
+      "fetchedAt": "2026-07-17T19:22:00.517380+00:00"
+    },
+    {
+      "name": "github.com/pbakaus/impeccable",
+      "version": "main",
+      "path": "repos/github.com/pbakaus/impeccable/main",
+      "fetchedAt": "2026-07-17T19:22:04.079641+00:00"
+    },
+    {
+      "name": "github.com/google-labs-code/design.md",
+      "version": "main",
+      "path": "repos/github.com/google-labs-code/design.md/main",
+      "fetchedAt": "2026-07-17T19:22:05.647395+00:00"
+    },
+    {
+      "name": "github.com/shadcn-ui/ui",
+      "version": "main",
+      "path": "repos/github.com/shadcn-ui/ui/main",
+      "fetchedAt": "2026-07-17T19:22:08.821855+00:00"
+    },
+    {
+      "name": "github.com/Leonxlnx/taste-skill",
+      "version": "main",
+      "path": "repos/github.com/Leonxlnx/taste-skill/main",
+      "fetchedAt": "2026-07-27T14:42:16.277353+00:00"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Local agent and source-research caches
+.agents/
+.opensrc/repos/
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+Package.resolved
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
