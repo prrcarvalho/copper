@@ -8,7 +8,6 @@
 # Swift Package Manager
 .build/
 .swiftpm/xcode/package.xcworkspace/xcuserdata/
-Package.resolved
 
 # Xcode
 DerivedData/

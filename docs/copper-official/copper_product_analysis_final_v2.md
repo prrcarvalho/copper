@@ -579,29 +579,3 @@ This strengthens the interpretation that Copper is positioned as a **cross-app c
 ### 16.3 No change to the main conclusion
 
 The original conclusion still stands: the public page plus the supplied marketing video are sufficient to reconstruct the core workflow, visual hierarchy and major actions of Copper for a close personal clone, but not its full hidden behaviour or exact internal implementation.
-
-## 17. Reconstruction verification status (2026-07-31)
-
-The implementation in this repository now covers the following observable or
-explicitly scoped behaviours: active-section routing and persistence,
-reversible Space completion, configurable capture shortcut parsing with
-conflict detection and reset, Accessibility attributed-text conversion to
-Markdown with a plain-text fallback, a non-activating source-positioned toast,
-separate Expand and Edit-in-New-Window paths, the composer focus control,
-reduced-motion/contrast/accessibility affordances, and local-only persistence.
-
-Model-level evidence is provided by a formal Swift Testing suite discovered and
-executed by `swift test` (10/10). Controlled background-mode
-runtime evidence now covers real selections in TextEdit, Safari and Chrome
-through a test-only capture-on-launch route that installs no keyboard monitor.
-Safari uses WebKit text-marker Accessibility attributes; Chrome was validated
-with an isolated `example.com` tab and exactly one persisted matching note.
-An isolated VS Code/Electron profile was exercised with a real AX selection and
-exactly one persisted matching note. A separate background-window diagnostic
-rendered forced Reduce Motion, non-colour differentiation, increased contrast
-and accessibility-scale paths on the second of two detected displays; the AX
-tree was inspected without foregrounding Copper. Spoken VoiceOver output,
-end-to-end keyboard focus/Space routing, and live production full-screen/cross-
-Space placement were not activated while the user was working. The exact
-evidence and limitations are recorded in `docs/ux-verification.md`; none is
-treated as proof of pixel-level or hidden one-to-one parity.
