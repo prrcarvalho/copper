@@ -1,0 +1,14 @@
+{
+  "scenario": "production cross-Space physical transition",
+  "bundle": ".build/Copper.app",
+  "gesture": "Control-Right",
+  "gestureSource": "physical user keyboard",
+  "panelVisibleAfterTransition": true,
+  "accessibilityTreeAvailableAfterTransition": true,
+  "productionPanelClass": "CopperPanel",
+  "productionPanelType": "NSPanel",
+  "productionPanelFloating": true,
+  "productionPanelKeyWindow": false,
+  "screenCount": 1,
+  "result": "pass for the observed Space transition; production multi-monitor remains blocked by the single-display session"
+}

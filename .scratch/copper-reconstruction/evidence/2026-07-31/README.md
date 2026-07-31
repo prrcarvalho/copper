@@ -62,6 +62,9 @@ kept rather than rewritten as a success.
 - `production-panel-fullscreen.jpeg` and
   `production-fullscreen-source.jpeg` — the production panel remained visible
   and AX-addressable in TextEdit's actual full-screen Space.
+- `production-cross-space-physical.json` — after the user performed one real
+  `Control-Right` transition, the production panel remained visible and
+  AX-addressable in the new Space; the session exposed one display.
 
 The successful capture fixtures do not contain Markdown punctuation whose
 literal escaping changed in the subsequent plain-fallback hardening, so their

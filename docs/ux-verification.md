@@ -115,7 +115,7 @@ report records that limitation.
 | Safari runtime | Real `Example Domain` selection captured as `**Example Domain**` through `attributedTextMarker` | **PASS (rich diagnostic route)** |
 | Chrome runtime | Temporary `example.com` tab exposed `attributedRange`; after AX font/bounds fixes it captured `**Example Domain**` with real selection bounds | **PASS (rich diagnostic route)** |
 | Electron/plain runtime | Real VS Code Electron Untitled editor selection captured exactly one plain note and one `Captured` toast; clipboard and selection were preserved, Copper stayed inactive/non-key and background monitors were zero | **PASS (runtime); no-AX-attributed-text branch remains formal-only** |
-| Spaces/full-screen/multiple monitors | Background mode was observed on display 2 of 2; production is a floating `CopperPanel`/`NSPanel`, level 3, behaviour 257, and remained visible/AX-addressable in TextEdit full-screen | **PARTIAL — production full-screen PASS; the foreground run exposed one display and cross-Space visibility received no physical confirmation** |
+| Spaces/full-screen/multiple monitors | Production `CopperPanel`/`NSPanel` remained visible and AX-addressable after one real `Control-Right` transition; the foreground session exposed one display | **PASS for full-screen and observed cross-Space transition; multi-monitor production blocked by single-display hardware/session** |
 | Visual one-to-one parity | Supplied frames support an approximation of hierarchy, not hidden/internal behaviour | **APPROXIMATION** |
 
 ## Visual comparison register
@@ -229,9 +229,11 @@ Select, Mark done, Copy, Copy as List, Expand, Edit, Edit in New Window and Move
 without foregrounding Copper. Each card is now one AX element rather than a
 card plus duplicated visual check/text children. This validates the current AX
 structure and forced render paths, but not spoken VoiceOver phrasing. No physical key was
-synthesised in background mode. Production full-screen was observed; a
-cross-Space physical confirmation was requested twice but no result was
-received, so it remains unproved.
+synthesised in background mode. Production full-screen was observed. The user
+then performed one real `Control-Right` transition; Computer Use found the
+production `CopperPanel` still visible and AX-addressable in the new Space. The
+current session exposed one display, so production multi-monitor movement
+remains externally blocked.
 
 Current evidence is retained under
 `.scratch/copper-reconstruction/evidence/2026-07-31/`, including:
@@ -268,9 +270,8 @@ bundle/executable paths, `isTrusted=true`, `backgroundUITest=true`,
 `localKeyboardMonitorInstalled=false`, then terminated the process. This proves
 the current bundle's TCC identity and background-monitor guard. The authorised
 foreground block separately proved default/custom live gestures, Settings,
-focused keyboard routing and production full-screen. Spoken VoiceOver and an
-actual cross-Space transition were requested but not physically confirmed;
-they remain unproved rather than PASS.
+focused keyboard routing, production full-screen and one physical cross-Space
+transition. Spoken VoiceOver remains unproved rather than PASS.
 
 ## Intentional scope boundary
 

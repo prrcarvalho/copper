@@ -66,8 +66,10 @@ hidden behaviour.
   `Shift-Command-C`, a persisted custom in-app Copy shortcut (including native
   text-field copy before and after customisation), Tab order, the core
   action flows, relaunch persistence and a real full-screen Space. Spoken
-  VoiceOver and an actual cross-Space transition were requested but not
-  physically confirmed.
+  VoiceOver remains unproved. One physical `Control-Right` transition was
+  completed and the production panel remained visible and AX-addressable in
+  the new Space. Production multi-monitor movement remains blocked because
+  the current session exposes only one display.
   The current Electron run used a real Untitled editor in the existing VS Code
   process; no user document was touched.
 - Visual matching is an evidence-based approximation, not a claim of pixel- or
