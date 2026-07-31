@@ -85,7 +85,7 @@ struct MainPanelView: View {
                     .padding(.top, 20)
                     .padding(.bottom, 122)
                 }
-                .scrollIndicators(.automatic)
+                .scrollIndicators(.hidden)
 
                 Divider().opacity(0.35)
                 composer
@@ -147,6 +147,7 @@ struct MainPanelView: View {
                     .contentShape(Circle())
             }
             .menuStyle(.borderlessButton)
+            .focusable(true)
             .accessibilityLabel("Options")
         }
         .padding(.horizontal, 16)
@@ -169,6 +170,7 @@ struct MainPanelView: View {
                 }
             }
             .buttonStyle(.plain)
+            .focusable(true)
             .accessibilityAddTraits(.isHeader)
             .accessibilityLabel("Section \(section.title)")
             .accessibilityValue(store.activeSectionID == section.id ? "Active" : "Inactive")
@@ -191,38 +193,22 @@ struct MainPanelView: View {
                     .padding(.top, 8)
             }
             .buttonStyle(.plain)
+            .focusable(true)
             .accessibilityLabel("Focus composer")
 
-            ZStack(alignment: .topLeading) {
-                if draft.isEmpty {
-                    Text("Add a note or a prompt (development)")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 12)
-                        .padding(.leading, 13)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $draft)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 1)
-                    .padding(.vertical, 3)
-                    .frame(minHeight: 62, maxHeight: 110)
-                    .focused($composerFocused)
-                    .accessibilityLabel("Add a note or a prompt")
-            }
-
-            if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button(action: commitDraft) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 23))
-                        .foregroundStyle(Color.accentColor)
-                }
-                .buttonStyle(.plain)
-                .help("Add note (⌘Return)")
-                .accessibilityLabel("Add note")
-                .keyboardShortcut(.return, modifiers: [.command])
-            }
+            TextField(
+                "Add a note or a prompt (development)",
+                text: $draft,
+                axis: .vertical
+            )
+            .textFieldStyle(.plain)
+            .font(.body)
+            .lineLimit(1...5)
+            .padding(.vertical, 6)
+            .focused($composerFocused)
+            .onSubmit(commitDraft)
+            .accessibilityLabel("Add a note or a prompt")
+            .accessibilityAction(named: "Add note") { commitDraft() }
         }
         .padding(14)
         .background(Color.white.opacity(0.70), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
@@ -336,24 +322,74 @@ struct NoteCard: View {
         .onTapGesture { store.toggleSelection(note.id) }
         .focusable(true)
         .onKeyPress(keys: [.space]) { keyPress in
-            if keyPress.modifiers.contains(.command) {
+            if keyPress.modifiers == [.command] {
                 store.toggleSelection(note.id)
-            } else {
+            } else if keyPress.modifiers.isEmpty {
                 store.handleCardSpace(noteID: note.id)
+            } else {
+                return .ignored
             }
             return .handled
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(note.markdown)
+        .onKeyPress(keys: [.return]) { keyPress in
+            guard keyPress.modifiers.isEmpty || keyPress.modifiers == [.command] else {
+                return .ignored
+            }
+            _ = store.handleCardReturn(
+                noteID: note.id,
+                openInNewWindow: keyPress.modifiers == [.command]
+            )
+            return .handled
+        }
+        // The card itself exposes the note label/value and every semantic
+        // action. Ignore its visual check/text children so VoiceOver does not
+        // announce each note three times in sequence.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(MarkdownConverter.plainText(from: note.markdown))
         .accessibilityValue(
             "\(note.isCompleted ? "Completed" : "Not completed"), \(isSelected ? "selected" : "not selected")"
         )
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: isSelected ? "Deselect" : "Select") {
-            store.toggleSelection(note.id)
-        }
-        .accessibilityAction(named: note.isCompleted ? "Mark as not done" : "Mark as done") {
-            store.toggleCompleted(note.id)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityActions {
+            Button(isSelected ? "Deselect" : "Select") {
+                store.toggleSelection(note.id)
+            }
+            Button(note.isCompleted ? "Mark as not done" : "Mark as done") {
+                store.toggleCompleted(note.id)
+            }
+            Button("Copy") {
+                store.ensureSelected(note.id)
+                _ = store.copySelected(asList: false)
+            }
+            Button("Copy as List") {
+                store.ensureSelected(note.id)
+                _ = store.copySelected(asList: true)
+            }
+            if store.selectedIDs.count <= 1 {
+                Button("Expand") {
+                    store.ensureSelected(note.id)
+                    store.expandedID = note.id
+                }
+            }
+            Button("Edit") {
+                _ = store.handleCardReturn(noteID: note.id, openInNewWindow: false)
+            }
+            Button("Edit in New Window") {
+                _ = store.handleCardReturn(noteID: note.id, openInNewWindow: true)
+            }
+            if store.selectedIDs.count > 1 {
+                Button("Merge Notes") {
+                    store.ensureSelected(note.id)
+                    store.mergeSelected()
+                }
+            }
+            ForEach(store.orderedSections) { destination in
+                Button("Move to \(destination.title)") {
+                    store.ensureSelected(note.id)
+                    store.moveSelected(to: destination.id)
+                }
+            }
         }
         .contextMenu { contextMenu }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isSelected)
@@ -397,7 +433,7 @@ struct NoteCard: View {
 
         Button("Edit in New Window") {
             store.ensureSelected(note.id)
-            store.openEditor?(note.id)
+            store.requestEditInNewWindow(note.id)
         }
         .keyboardShortcut(.return, modifiers: [.command])
 

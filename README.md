@@ -75,6 +75,7 @@ native macOS app. See
 ├── Tests/CopperTests/
 │   └── CopperTests.swift
 ├── Scripts/
+│   ├── AccessibilityTrustDiagnostic.sh
 │   ├── BuildApp.sh
 │   ├── CopperSmoke.swift
 │   ├── LaunchBackgroundUITest.sh
@@ -127,8 +128,19 @@ mode Copper uses a normal `NSWindow` at `NSWindow.Level.normal`, does not join
 other Spaces or full-screen spaces, does not call `orderFrontRegardless()` and
 does not activate the app. It also installs no global or local keyboard monitor,
 so Computer Use cannot observe, consume or re-emit a key from the user's other
-apps. Production startup remains the floating companion panel and is unchanged
-when neither switch is present.
+apps. Production startup remains the floating `CopperPanel` (`NSPanel`) with
+one observational global capture monitor. The panel can become key for its
+text and card controls without becoming the main window. In-app shortcuts use
+native menu/key handlers; production has no local event monitor and never
+reposts input. Custom global shortcuts require Command plus another modifier,
+and Control-Option is rejected because it is the VoiceOver modifier.
+
+The production keyboard route was also exercised against the exact signed
+bundle: `⌘C` copied one selected card without completing it, `⇧⌘C` copied two
+cards as a deterministic numbered list and completed them, and `⌘C` continued
+to use the native field editor for a real Search-field selection. Changing Copy
+to `⌘⇧K` in Settings persisted and routed the custom command once while leaving
+standard text-field Copy intact.
 
 The launcher refuses to start if the exact Copper executable is already
 running, verifies that launch produced exactly one PID and records that PID for
@@ -168,6 +180,7 @@ persistence without opening the UI:
 
 ```bash
 swiftc -parse-as-library Sources/CopperCore/Models.swift Scripts/CopperSmoke.swift \
+  -framework AppKit -framework ApplicationServices -framework Combine \
   -o .build/CopperSmoke && .build/CopperSmoke
 ```
 
@@ -178,8 +191,9 @@ swift test list
 swift test
 ```
 
-It currently executes ten domain, persistence, formatting and keyboard-monitor
-regression cases. The matching upstream Swift Testing 6.3.3 revision is pinned
+It currently executes 18 domain, persistence, formatting, ordering, capture
+cardinality and keyboard-monitor regression cases. The matching upstream Swift
+Testing 6.3.3 revision is pinned
 as a test-only dependency because this Command Line Tools installation's
 prebuilt `Testing.framework` compiles macros but enumerates zero test records.
 

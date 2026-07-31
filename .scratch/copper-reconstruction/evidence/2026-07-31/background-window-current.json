@@ -1,0 +1,38 @@
+{
+  "applicationActive" : false,
+  "backgroundUITest" : true,
+  "collectionBehaviorRawValue" : 0,
+  "forcedAccessibilityScale" : false,
+  "forcedDifferentiateWithoutColor" : false,
+  "forcedHighContrast" : false,
+  "forcedReduceMotion" : false,
+  "globalCaptureMonitorInstalled" : false,
+  "isFloatingPanel" : false,
+  "isKeyWindow" : false,
+  "isVisible" : true,
+  "keyboardMonitorsInstalled" : false,
+  "localKeyboardMonitorInstalled" : false,
+  "screenCount" : 2,
+  "screens" : [
+    {
+      "height" : 967,
+      "width" : 1496,
+      "x" : 0,
+      "y" : 0
+    },
+    {
+      "height" : 1080,
+      "width" : 1920,
+      "x" : 1496,
+      "y" : 131
+    }
+  ],
+  "windowClass" : "NSWindow",
+  "windowFrame" : {
+    "height" : 792,
+    "width" : 430,
+    "x" : 2241,
+    "y" : 324
+  },
+  "windowLevel" : 0
+}

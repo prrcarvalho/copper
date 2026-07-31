@@ -1,0 +1,120 @@
+{
+  "activeSectionID" : "FC3F0FB2-567B-4019-834A-9A669ACC1E56",
+  "applicationActive" : false,
+  "backgroundUITest" : true,
+  "captured" : true,
+  "clipboardChangeCountAfter" : 2311,
+  "clipboardChangeCountBefore" : 2311,
+  "clipboardUnchanged" : true,
+  "frontmostApplicationBundleIDAfter" : "com.microsoft.VSCode",
+  "frontmostApplicationBundleIDBefore" : "com.microsoft.VSCode",
+  "keyboardMonitorsInstalled" : false,
+  "matchingNoteCountAfter" : 1,
+  "noteCountAfter" : 5,
+  "noteCountBefore" : 4,
+  "noteDelta" : 1,
+  "noteID" : "F3D86468-D55E-49D8-A454-AF0B9DF08BF0",
+  "noteMarkdown" : "Example Domain",
+  "selectionPreservedAfter" : true,
+  "selectionProbe" : {
+    "applicationFound" : true,
+    "attributeNames" : [
+      "AXBlockQuoteLevel",
+      "AXChildren",
+      "AXColumnHeaderUIElements",
+      "AXCustomActions",
+      "AXCustomContent",
+      "AXDOMClassList",
+      "AXDOMIdentifier",
+      "AXDescription",
+      "AXElementBusy",
+      "AXEnabled",
+      "AXEndTextMarker",
+      "AXFocused",
+      "AXFrame",
+      "AXHelp",
+      "AXInsertionPointLineNumber",
+      "AXLanguage",
+      "AXLinkedUIElements",
+      "AXLoaded",
+      "AXLoadingProgress",
+      "AXNumberOfCharacters",
+      "AXParent",
+      "AXPlaceholderValue",
+      "AXPosition",
+      "AXRequired",
+      "AXRole",
+      "AXRoleDescription",
+      "AXRows",
+      "AXSelected",
+      "AXSelectedRows",
+      "AXSelectedText",
+      "AXSelectedTextMarkerRange",
+      "AXSelectedTextRange",
+      "AXSelectedTextRanges",
+      "AXSize",
+      "AXStartTextMarker",
+      "AXSubrole",
+      "AXTitle",
+      "AXTitleUIElement",
+      "AXTopLevelUIElement",
+      "AXURL",
+      "AXValue",
+      "AXVisibleCharacterRange",
+      "AXVisited",
+      "AXWindow",
+      "ChromeAXNodeId"
+    ],
+    "attributes" : {
+      "AXDescription" : "",
+      "AXRole" : "AXWebArea",
+      "AXSelectedText" : "Example Domain",
+      "AXSelectedTextRange" : "<AXValue 0x8aeb54ed0> {value = location:0 length:14 type = kAXValueCFRangeType}",
+      "AXTitle" : "Example Domain",
+      "AXValue" : ""
+    },
+    "focusedElement" : true,
+    "selectedTextMarkerRange" : {
+      "attributedStatus" : 0,
+      "status" : 0,
+      "stringStatus" : 0,
+      "stringValue" : "Example Domain",
+      "typeID" : 152
+    },
+    "selectedTextRange" : {
+      "attributedRuns" : [
+        {
+          "attributes" : {
+            "AXFont" : "{\n    AXFontBold = 1;\n    AXFontSize = 24;\n}",
+            "AXForegroundColor" : "<CGColor 0x8af5509a0> [<CGColorSpace 0x8aec7c780> (kCGColorSpaceICCBased; kCGColorSpaceModelRGB; Generic RGB Profile)] headroom = 1.000000 ( 0 0 0 1 )"
+          },
+          "length" : 14,
+          "location" : 0,
+          "text" : "Example Domain"
+        }
+      ],
+      "attributedStatus" : 0,
+      "status" : 0
+    }
+  },
+  "selectionSource" : "attributedRange",
+  "sourceFrame" : {
+    "height" : 0,
+    "width" : 0,
+    "x" : 0,
+    "y" : 967
+  },
+  "toastExpected" : true,
+  "toastPresentationDelta" : 1,
+  "toastState" : {
+    "height" : 38,
+    "isKeyWindow" : false,
+    "lastMessage" : "Captured",
+    "level" : 3,
+    "presentationCount" : 1,
+    "visible" : true,
+    "width" : 128,
+    "x" : 8,
+    "y" : 8
+  }
+}

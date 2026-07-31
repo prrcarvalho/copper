@@ -3,6 +3,15 @@ import ApplicationServices
 import Combine
 import Foundation
 
+/// Borderless nonactivating panels do not accept text input unless they can
+/// become key. Copper stays an accessory app and this panel never becomes the
+/// main window, but focused controls can receive the user's keyboard normally.
+@MainActor
+public final class CopperPanel: NSPanel {
+    public override var canBecomeKey: Bool { true }
+    public override var canBecomeMain: Bool { false }
+}
+
 public struct CopperSection: Codable, Hashable, Identifiable {
     public let id: UUID
     public var title: String
@@ -63,8 +72,11 @@ public struct CopperPreferences: Codable {
         guard let capture = CopperShortcut.parse(captureShortcut) else {
             return "Use Double Shift or a key combination such as ⌘⇧C."
         }
+        if capture.usesVoiceOverModifier {
+            return "Control + Option is reserved for VoiceOver and may alter source-app input."
+        }
         guard capture.isSafeGlobalCapture else {
-            return "Global capture shortcuts must include Command, Option, Control, or Shift."
+            return "Use Command with at least one additional modifier for global capture."
         }
         let otherShortcuts = [copyShortcut, copyAsListShortcut, markDoneShortcut].compactMap(CopperShortcut.parse)
         if otherShortcuts.contains(where: { $0 == capture }) {
@@ -122,7 +134,8 @@ public struct CopperShortcut: Equatable, Hashable {
         normalized = normalized.replacingOccurrences(of: "DOUBLESHIFT", with: "SHIFT SHIFT")
         let tokens = normalized.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
         guard !tokens.isEmpty else { return nil }
-        if tokens.count == 2, tokens.allSatisfy({ $0 == "SHIFT" }) {
+        if (tokens.count == 2 && tokens.allSatisfy({ $0 == "SHIFT" }))
+            || tokens == ["DOUBLE", "SHIFT"] {
             return CopperShortcut(trigger: .doubleShift)
         }
 
@@ -163,15 +176,24 @@ public struct CopperShortcut: Equatable, Hashable {
         }
     }
 
-    /// A global key-down monitor must never bind an ordinary unmodified key,
-    /// otherwise normal typing could trigger captures system-wide.
+    /// A global monitor observes rather than consumes the source event. Require
+    /// Command plus another modifier so the shortcut cannot insert an ordinary
+    /// or Option-modified character into the source app. Control + Option is
+    /// separately excluded because it is macOS's VoiceOver modifier.
     public var isSafeGlobalCapture: Bool {
         switch trigger {
         case .doubleShift:
             return true
         case let .key(_, modifiers):
-            return !modifiers.isEmpty
+            return modifiers.contains(.command)
+                && modifiers.count >= 2
+                && !usesVoiceOverModifier
         }
+    }
+
+    public var usesVoiceOverModifier: Bool {
+        guard case let .key(_, modifiers) = trigger else { return false }
+        return modifiers.contains(.control) && modifiers.contains(.option)
     }
 
     public func matches(_ event: NSEvent) -> Bool {
@@ -329,6 +351,17 @@ public final class CopperStore: ObservableObject {
         return true
     }
 
+    @discardableResult
+    public func handleCardReturn(noteID: UUID, openInNewWindow: Bool) -> Bool {
+        guard notes.contains(where: { $0.id == noteID }) else { return false }
+        ensureSelected(noteID)
+        if openInNewWindow {
+            return requestEditInNewWindow(noteID)
+        }
+        editingID = noteID
+        return true
+    }
+
     public func ensureSelected(_ id: UUID) {
         if !selectedIDs.contains(id) {
             selectedIDs = [id]
@@ -360,19 +393,45 @@ public final class CopperStore: ObservableObject {
     }
 
     @discardableResult
-    public func copySelected(asList: Bool) -> String? {
+    public func copySelected(asList: Bool, to pasteboard: NSPasteboard = .general) -> String? {
+        copySelected(asList: asList) { output in
+            let priorItems = pasteboard.pasteboardItems?.map { item -> NSPasteboardItem in
+                let snapshot = NSPasteboardItem()
+                for type in item.types {
+                    if let data = item.data(forType: type) {
+                        snapshot.setData(data, forType: type)
+                    }
+                }
+                return snapshot
+            } ?? []
+            pasteboard.clearContents()
+            guard pasteboard.setString(output, forType: .string) else {
+                pasteboard.clearContents()
+                if !priorItems.isEmpty {
+                    _ = pasteboard.writeObjects(priorItems)
+                }
+                return false
+            }
+            return true
+        }
+    }
+
+    @discardableResult
+    func copySelected(asList: Bool, using writer: (String) -> Bool) -> String? {
         let selected = orderedNotes.filter { selectedIDs.contains($0.id) }
         guard !selected.isEmpty else { return nil }
         let output: String
         if asList {
             output = selected.enumerated().map { index, note in
-                "\(index + 1). \(plainText(note.markdown))"
+                "\(index + 1). \(MarkdownConverter.plainText(from: note.markdown))"
             }.joined(separator: "\n")
         } else {
             output = selected.map { $0.markdown }.joined(separator: "\n\n")
         }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(output, forType: .string)
+        guard writer(output) else {
+            showToast("Could not copy", kind: .error)
+            return nil
+        }
         if asList {
             markSelectedDone()
             showToast("Copied as List", kind: .copy)
@@ -408,6 +467,13 @@ public final class CopperStore: ObservableObject {
         save()
     }
 
+    @discardableResult
+    public func requestEditInNewWindow(_ noteID: UUID) -> Bool {
+        guard notes.contains(where: { $0.id == noteID }), let openEditor else { return false }
+        openEditor(noteID)
+        return true
+    }
+
     public func showToast(_ message: String, kind: CopperToastKind) {
         toast = CopperToast(message: message, kind: kind)
         let currentID = toast?.id
@@ -415,12 +481,6 @@ public final class CopperStore: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_600_000_000)
             if self?.toast?.id == currentID { self?.toast = nil }
         }
-    }
-
-    private func plainText(_ markdown: String) -> String {
-        markdown.replacingOccurrences(of: "**", with: "")
-            .replacingOccurrences(of: "__", with: "")
-            .replacingOccurrences(of: "`", with: "")
     }
 
     private func load() {
@@ -457,23 +517,55 @@ public final class CopperStore: ObservableObject {
     }
 }
 
+public enum CapturedSelectionSource: String {
+    case attributedRange
+    case attributedTextMarker
+    case plainTextMarker
+    case plainSelectedText
+}
+
 public struct CapturedSelection {
     public let markdown: String
     public let sourceFrame: NSRect?
-    public init(markdown: String, sourceFrame: NSRect?) {
+    public let source: CapturedSelectionSource
+    public init(
+        markdown: String,
+        sourceFrame: NSRect?,
+        source: CapturedSelectionSource = .plainSelectedText
+    ) {
         self.markdown = markdown
         self.sourceFrame = sourceFrame
+        self.source = source
+    }
+}
+
+public extension CopperStore {
+    /// The single domain ingestion point shared by production capture and the
+    /// background diagnostic. One invocation can append at most one note.
+    @discardableResult
+    func capture(_ selection: CapturedSelection) -> CopperNote? {
+        addNote(markdown: selection.markdown)
     }
 }
 
 public enum MarkdownConverter {
+    public static func plainText(from markdown: String) -> String {
+        guard let attributed = try? AttributedString(
+            markdown: markdown,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) else {
+            return markdown
+        }
+        return String(attributed.characters)
+    }
+
     public static func markdown(from value: Any) -> String? {
         if let attributed = value as? NSAttributedString {
             return markdown(from: attributed)
         }
         if let string = value as? String {
             let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
+            return trimmed.isEmpty ? nil : escapeMarkdownText(trimmed)
         }
         return nil
     }
@@ -485,27 +577,81 @@ public enum MarkdownConverter {
             guard let substring = attributed.attributedSubstring(from: range).string as String? else { return }
             let text = substring.replacingOccurrences(of: "\u{00A0}", with: " ")
             guard !text.isEmpty else { return }
-            var rendered = text
+            var rendered = escapeMarkdownText(text)
             if let link = attributes[.link] as? URL {
                 rendered = "[\(rendered)](\(link.absoluteString))"
             } else if let link = attributes[.link] as? String, !link.isEmpty {
                 rendered = "[\(rendered)](\(link))"
             }
+            var isBold = false
+            var isItalic = false
+            var isMonospaced = false
             if let font = attributes[.font] as? NSFont {
                 let traits = font.fontDescriptor.symbolicTraits
-                let isBold = traits.contains(.bold)
-                let isItalic = traits.contains(.italic)
-                if isBold && isItalic { rendered = "***\(rendered)***" }
-                else if isBold { rendered = "**\(rendered)**" }
-                else if isItalic { rendered = "*\(rendered)*" }
-                else if font.fontDescriptor.symbolicTraits.contains(.monoSpace) {
-                    rendered = "`\(rendered)`"
-                }
+                isBold = traits.contains(.bold)
+                isItalic = traits.contains(.italic)
+                isMonospaced = traits.contains(.monoSpace)
             }
+            // AX attributed strings deliberately use Accessibility-specific
+            // keys rather than AppKit's ordinary `.font` key. TextEdit and
+            // other native apps expose a font dictionary whose PostScript name
+            // carries the style on macOS versions before the explicit
+            // AXFontBold/AXFontItalic attributes were introduced.
+            if let fontInfo = attributes[.accessibilityFont] as? NSDictionary {
+                let fontName = [NSAccessibility.FontAttributeKey.fontName, .visibleName]
+                    .compactMap { fontInfo[$0] as? String }
+                    .joined(separator: " ")
+                    .lowercased()
+                isBold = isBold || ["bold", "semibold", "demibold", "heavy", "black"]
+                    .contains(where: fontName.contains)
+                isItalic = isItalic || ["italic", "oblique"].contains(where: fontName.contains)
+                isMonospaced = isMonospaced || ["mono", "menlo", "courier"].contains(where: fontName.contains)
+                isBold = isBold || (fontInfo["AXFontBold"] as? NSNumber)?.boolValue == true
+                isItalic = isItalic || (fontInfo["AXFontItalic"] as? NSNumber)?.boolValue == true
+            }
+            isBold = isBold || (attributes[NSAttributedString.Key("AXFontBold")] as? NSNumber)?.boolValue == true
+            isItalic = isItalic || (attributes[NSAttributedString.Key("AXFontItalic")] as? NSNumber)?.boolValue == true
+
+            if isBold && isItalic { rendered = "***\(rendered)***" }
+            else if isBold { rendered = "**\(rendered)**" }
+            else if isItalic { rendered = "*\(rendered)*" }
+            else if isMonospaced { rendered = "`\(rendered)`" }
             result += rendered
         }
         let normalized = result.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
+    }
+
+    /// AX plain-string fallbacks contain literal user text, not Markdown. Escape
+    /// inline delimiters and line-leading block markers so the preview and later
+    /// plain-text output preserve the selected characters rather than treating
+    /// them as authored Markdown.
+    private static func escapeMarkdownText(_ text: String) -> String {
+        let inlineDelimiters = Set("\\`*_[]<>")
+        return text.split(separator: "\n", omittingEmptySubsequences: false).map { substring in
+            let line = String(substring)
+            var escaped = String(line.flatMap { character -> [Character] in
+                inlineDelimiters.contains(character) ? ["\\", character] : [character]
+            })
+            let leadingWhitespace = line.prefix { $0 == " " || $0 == "\t" }.count
+            let content = line.dropFirst(leadingWhitespace)
+            if let first = content.first, "#>+-".contains(first) {
+                escaped.insert("\\", at: escaped.index(escaped.startIndex, offsetBy: leadingWhitespace))
+            } else {
+                let digitCount = content.prefix { $0.isNumber }.count
+                let suffix = content.dropFirst(digitCount)
+                if digitCount > 0,
+                   let marker = suffix.first,
+                   marker == "." || marker == ")",
+                   suffix.dropFirst().first?.isWhitespace == true {
+                    escaped.insert(
+                        "\\",
+                        at: escaped.index(escaped.startIndex, offsetBy: leadingWhitespace + digitCount)
+                    )
+                }
+            }
+            return escaped
+        }.joined(separator: "\n")
     }
 }
 
@@ -575,6 +721,27 @@ public enum AccessibilityReader {
                 attributes[name] = String(describing: value)
             }
         }
+        var rangeProbe: [String: Any] = [:]
+        var selectedRangeValue: CFTypeRef?
+        let selectedRangeStatus = AXUIElementCopyAttributeValue(
+            focusedElement,
+            kAXSelectedTextRangeAttribute as CFString,
+            &selectedRangeValue
+        )
+        rangeProbe["status"] = selectedRangeStatus.rawValue
+        if selectedRangeStatus == .success, let selectedRangeValue {
+            var attributedValue: CFTypeRef?
+            let attributedStatus = AXUIElementCopyParameterizedAttributeValue(
+                focusedElement,
+                kAXAttributedStringForRangeParameterizedAttribute as CFString,
+                selectedRangeValue,
+                &attributedValue
+            )
+            rangeProbe["attributedStatus"] = attributedStatus.rawValue
+            if let attributedValue {
+                rangeProbe["attributedRuns"] = attributedRuns(from: attributedValue)
+            }
+        }
         var markerRangeValue: CFTypeRef?
         let markerStatus = AXUIElementCopyAttributeValue(
             focusedElement,
@@ -609,8 +776,29 @@ public enum AccessibilityReader {
             "focusedElement": true,
             "attributeNames": names,
             "attributes": attributes,
+            "selectedTextRange": rangeProbe,
             "selectedTextMarkerRange": markerProbe,
         ]
+    }
+
+    private static func attributedRuns(from value: CFTypeRef) -> [[String: Any]] {
+        guard CFGetTypeID(value) == CFAttributedStringGetTypeID(),
+              let attributed = (value as AnyObject) as? NSAttributedString else { return [] }
+        var runs: [[String: Any]] = []
+        attributed.enumerateAttributes(
+            in: NSRange(location: 0, length: attributed.length),
+            options: []
+        ) { attributes, range, _ in
+            runs.append([
+                "location": range.location,
+                "length": range.length,
+                "text": attributed.attributedSubstring(from: range).string,
+                "attributes": Dictionary(uniqueKeysWithValues: attributes.map {
+                    ($0.key.rawValue, String(describing: $0.value))
+                }),
+            ])
+        }
+        return runs
     }
 
     private static func selectedSelection(from root: AXUIElement) -> CapturedSelection? {
@@ -652,7 +840,11 @@ public enum AccessibilityReader {
                 in: focusedElement,
                 parameterizedAttribute: kAXBoundsForRangeParameterizedAttribute as CFString
             )
-            return CapturedSelection(markdown: markdown, sourceFrame: selectionFrame ?? frame)
+            return CapturedSelection(
+                markdown: markdown,
+                sourceFrame: selectionFrame ?? textMarkerBounds(in: focusedElement) ?? frame,
+                source: .attributedRange
+            )
         }
 
         // WebKit/Safari exposes selections as text-marker ranges rather than
@@ -679,7 +871,11 @@ public enum AccessibilityReader {
             ) == .success,
                let markerAttributedValue,
                let markdown = MarkdownConverter.markdown(from: markerAttributedValue) {
-                return CapturedSelection(markdown: markdown, sourceFrame: selectionFrame ?? frame)
+                return CapturedSelection(
+                    markdown: markdown,
+                    sourceFrame: selectionFrame ?? frame,
+                    source: .attributedTextMarker
+                )
             }
 
             var markerStringValue: CFTypeRef?
@@ -691,7 +887,11 @@ public enum AccessibilityReader {
             ) == .success,
                let markerStringValue,
                let markdown = MarkdownConverter.markdown(from: markerStringValue) {
-                return CapturedSelection(markdown: markdown, sourceFrame: selectionFrame ?? frame)
+                return CapturedSelection(
+                    markdown: markdown,
+                    sourceFrame: selectionFrame ?? frame,
+                    source: .plainTextMarker
+                )
             }
         }
 
@@ -699,7 +899,11 @@ public enum AccessibilityReader {
         guard AXUIElementCopyAttributeValue(focusedElement, kAXSelectedTextAttribute as CFString, &selectedValue) == .success,
               let selectedValue,
               let markdown = MarkdownConverter.markdown(from: selectedValue) else { return nil }
-        return CapturedSelection(markdown: markdown, sourceFrame: frame)
+        return CapturedSelection(
+            markdown: markdown,
+            sourceFrame: frame,
+            source: .plainSelectedText
+        )
     }
 
     private static func bounds(
@@ -720,8 +924,26 @@ public enum AccessibilityReader {
         var bounds = CGRect.zero
         guard AXValueGetValue(unsafeBitCast(boundsValue, to: AXValue.self), .cgRect, &bounds),
               !bounds.isNull,
-              !bounds.isInfinite else { return nil }
+              !bounds.isInfinite,
+              !bounds.isEmpty,
+              bounds.width > 1,
+              bounds.height > 1 else { return nil }
         return NSRect(origin: bounds.origin, size: bounds.size)
+    }
+
+    private static func textMarkerBounds(in element: AXUIElement) -> NSRect? {
+        var markerRangeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element,
+            kAXSelectedTextMarkerRangeAttribute as CFString,
+            &markerRangeValue
+        ) == .success,
+        let markerRangeValue else { return nil }
+        return bounds(
+            of: markerRangeValue,
+            in: element,
+            parameterizedAttribute: kAXBoundsForTextMarkerRangeParameterizedAttribute as CFString
+        )
     }
 
     private static func applicationElement(_ applicationIdentifier: String) -> AXUIElement? {
@@ -766,6 +988,9 @@ public final class GlobalCaptureMonitor {
             case .key: return .keyDown
             }
         }()
+        // AppKit global monitors are observational: unlike a local monitor,
+        // this callback cannot consume or replace the event, and Copper never
+        // posts a synthetic replacement.
         monitor = NSEvent.addGlobalMonitorForEvents(matching: eventMask) { [weak self] event in
             self?.handle(event)
         }
@@ -774,6 +999,12 @@ public final class GlobalCaptureMonitor {
     private func handle(_ event: NSEvent) {
         if case .key = shortcut.trigger {
             if shortcut.matches(event) { trigger() }
+            return
+        }
+        let conflictingModifiers: NSEvent.ModifierFlags = [.command, .option, .control]
+        if !event.modifierFlags.intersection(conflictingModifiers).isEmpty {
+            shiftDown = event.modifierFlags.contains(.shift)
+            lastShiftDown = .distantPast
             return
         }
         let isShiftDown = event.modifierFlags.contains(.shift)

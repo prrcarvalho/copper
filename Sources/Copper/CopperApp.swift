@@ -27,9 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NSWindow?
     private var captureMonitor: GlobalCaptureMonitor?
     private var preferencesCancellable: AnyCancellable?
-    private var keyMonitor: Any?
     private var editorWindows: [NSWindow] = []
     private var captureToastController: CaptureToastController?
+    private var liveCaptureGestureCount = 0
+    private var liveCaptureSuccessCount = 0
 
     override init() {
         let arguments = ProcessInfo.processInfo.arguments
@@ -80,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.deactivate()
             self.panel = testWindow
         } else {
-            let panel = NSPanel(
+            let panel = CopperPanel(
                 contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
                 styleMask: [.borderless, .nonactivatingPanel, .resizable],
                 backing: .buffered,
@@ -111,12 +112,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         captureToastController = CaptureToastController()
-        // Computer Use must never observe or intercept the user's keyboard. The
-        // production path retains both the global capture monitor and the local
-        // Copper shortcut monitor unchanged.
+        // Computer Use must never observe the user's keyboard. Production has
+        // one observational global capture monitor; in-app shortcuts are normal
+        // menu commands/key handlers, never a local event monitor.
         if !backgroundUITest {
             let monitor = GlobalCaptureMonitor(shortcut: store.preferences.captureShortcut) { [weak self] in
-                Task { @MainActor in self?.captureSelectedText() }
+                Task { @MainActor in self?.handleGlobalCaptureGesture() }
             }
             monitor.start()
             captureMonitor = monitor
@@ -124,7 +125,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .map(\.captureShortcut)
                 .removeDuplicates()
                 .sink { [weak monitor] shortcut in monitor?.update(shortcut: shortcut) }
-            installKeyMonitor()
         }
         if !backgroundUITest {
             AccessibilityReader.promptForTrustIfNeeded()
@@ -148,10 +148,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         captureMonitor?.stop()
         captureMonitor = nil
-        if let keyMonitor {
-            NSEvent.removeMonitor(keyMonitor)
-            self.keyMonitor = nil
-        }
         preferencesCancellable = nil
     }
 
@@ -163,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store.showToast("Select text to capture", kind: .neutral)
             return nil
         }
-        guard let note = store.addNote(markdown: selected.markdown) else {
+        guard let note = store.capture(selected) else {
             store.showToast("Could not capture selection", kind: .error)
             return nil
         }
@@ -177,47 +173,100 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (selected, note)
     }
 
-    private func installKeyMonitor() {
-        guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.panel != nil else { return event }
+    private func handleGlobalCaptureGesture() {
+        let noteCountBefore = store.notes.count
+        let clipboardChangeCountBefore = NSPasteboard.general.changeCount
+        let toastPresentationCountBefore = captureToastController?.presentationCount ?? 0
+        let frontmostApplicationBefore = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        liveCaptureGestureCount += 1
+        let result = captureSelectedText()
+        if result != nil {
+            liveCaptureSuccessCount += 1
+        }
+        writeLiveCaptureDiagnosticIfRequested(
+            result: result,
+            noteCountBefore: noteCountBefore,
+            clipboardChangeCountBefore: clipboardChangeCountBefore,
+            toastPresentationCountBefore: toastPresentationCountBefore,
+            frontmostApplicationBefore: frontmostApplicationBefore
+        )
+    }
 
-            // A non-activating panel can receive key events without becoming
-            // NSApp.keyWindow. Keep separate editor windows' normal text editing
-            // behaviour intact, while allowing the companion panel's configurable
-            // shortcuts to be handled inside Copper.
-            if let keyWindow = NSApp.keyWindow,
-               self.editorWindows.contains(where: { $0 === keyWindow }) {
-                return event
+    private func writeLiveCaptureDiagnosticIfRequested(
+        result: (selection: CapturedSelection, note: CopperNote)?,
+        noteCountBefore: Int,
+        clipboardChangeCountBefore: Int,
+        toastPresentationCountBefore: Int,
+        frontmostApplicationBefore: String?
+    ) {
+        let outputPrefix = "--live-capture-diagnostic-output="
+        guard let outputArgument = arguments.first(where: { $0.hasPrefix(outputPrefix) }) else {
+            return
+        }
+        let outputPath = String(outputArgument.dropFirst(outputPrefix.count))
+        guard !outputPath.isEmpty else { return }
+
+        // The monitor callback records only counters and state after the normal
+        // capture path has completed. It never consumes, replaces, or reposts
+        // the originating keyboard event.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self else { return }
+            let frontmostApplicationAfter = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            var report: [String: Any] = [
+                "gestureCount": self.liveCaptureGestureCount,
+                "successCount": self.liveCaptureSuccessCount,
+                "captured": result != nil,
+                "noteCountBeforeLatestGesture": noteCountBefore,
+                "noteCountAfterLatestGesture": self.store.notes.count,
+                "noteDeltaLatestGesture": self.store.notes.count - noteCountBefore,
+                "toastPresentationDeltaLatestGesture":
+                    (self.captureToastController?.presentationCount ?? 0) - toastPresentationCountBefore,
+                "clipboardChangeCountBeforeLatestGesture": clipboardChangeCountBefore,
+                "clipboardChangeCountAfterLatestGesture": NSPasteboard.general.changeCount,
+                "clipboardUnchangedLatestGesture": NSPasteboard.general.changeCount == clipboardChangeCountBefore,
+                "frontmostApplicationBundleIDBefore": frontmostApplicationBefore ?? NSNull(),
+                "frontmostApplicationBundleIDAfter": frontmostApplicationAfter ?? NSNull(),
+                "sourceApplicationRemainedActive": frontmostApplicationBefore != nil
+                    && frontmostApplicationBefore == frontmostApplicationAfter,
+                "applicationActive": NSApp.isActive,
+                "globalCaptureMonitorInstalled": self.captureMonitor != nil,
+                "localKeyboardMonitorInstalled": false,
+                "noteID": result?.note.id.uuidString ?? NSNull(),
+                "noteMarkdown": result?.note.markdown ?? NSNull(),
+                "selectionSource": result?.selection.source.rawValue ?? NSNull(),
+                "toastState": self.captureToastController?.diagnosticState() ?? [
+                    "visible": false,
+                    "isKeyWindow": false,
+                    "presentationCount": 0,
+                ],
+            ]
+            if let result, let frontmostApplicationBefore {
+                report["selectionPreservedAfter"] = AccessibilityReader
+                    .selectedSelection(applicationIdentifier: frontmostApplicationBefore)?.markdown == result.selection.markdown
+                report["matchingNoteCountAfter"] = self.store.notes.filter {
+                    $0.markdown == result.note.markdown
+                }.count
+            } else {
+                report["selectionPreservedAfter"] = NSNull()
+                report["matchingNoteCountAfter"] = 0
+            }
+            if let frame = result?.selection.sourceFrame {
+                report["sourceFrame"] = [
+                    "x": Double(frame.origin.x),
+                    "y": Double(frame.origin.y),
+                    "width": Double(frame.size.width),
+                    "height": Double(frame.size.height),
+                ]
+            } else {
+                report["sourceFrame"] = NSNull()
             }
 
-            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            // Keep ordinary typing and Space/Escape editing behaviour intact. Command
-            // shortcuts are handled here because a borderless accessory panel does not
-            // consistently route them through SwiftUI's scene command system.
-            if let panel = self.panel,
-               (panel.firstResponder is NSTextView || panel.firstResponder is NSTextField),
-               !modifiers.contains(.command) {
-                return event
+            do {
+                let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                try data.write(to: URL(fileURLWithPath: outputPath), options: .atomic)
+            } catch {
+                fputs("[DEBUG-copper-live-capture] Could not write live capture diagnostic: \(error)\n", stderr)
             }
-
-            if CopperShortcut.parse(store.preferences.copyShortcut)?.matches(event) == true {
-                _ = store.copySelected(asList: false)
-                return nil
-            }
-            if CopperShortcut.parse(store.preferences.copyAsListShortcut)?.matches(event) == true {
-                _ = store.copySelected(asList: true)
-                return nil
-            }
-            if CopperShortcut.parse(store.preferences.markDoneShortcut)?.matches(event) == true {
-                store.toggleSelectedCompletion()
-                return nil
-            }
-            if CopperShortcut.parse("⇧⌘M")?.matches(event) == true {
-                store.mergeSelected()
-                return nil
-            }
-            return event
         }
     }
 
@@ -237,7 +286,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "executablePath": Bundle.main.executableURL?.path ?? NSNull(),
             "processIdentifier": ProcessInfo.processInfo.processIdentifier,
             "backgroundUITest": backgroundUITest,
-            "keyboardMonitorsInstalled": captureMonitor != nil || keyMonitor != nil,
+            "keyboardMonitorsInstalled": captureMonitor != nil,
+            "globalCaptureMonitorInstalled": captureMonitor != nil,
+            "localKeyboardMonitorInstalled": false,
         ]
 
         do {
@@ -310,7 +361,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let report: [String: Any] = [
                 "backgroundUITest": self.backgroundUITest,
                 "applicationActive": NSApp.isActive,
-                "keyboardMonitorsInstalled": self.captureMonitor != nil || self.keyMonitor != nil,
+                "keyboardMonitorsInstalled": self.captureMonitor != nil,
+                "globalCaptureMonitorInstalled": self.captureMonitor != nil,
+                "localKeyboardMonitorInstalled": false,
                 "windowClass": String(describing: type(of: window)),
                 "windowLevel": window.level.rawValue,
                 "collectionBehaviorRawValue": Int64(window.collectionBehavior.rawValue),
@@ -347,6 +400,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func performCaptureDiagnosticIfRequested() {
         let applicationIdentifier = arguments.first(where: { $0.hasPrefix("--capture-application-bundle-id=") })
             .map { String($0.dropFirst("--capture-application-bundle-id=".count)) }
+        let noteCountBefore = store.notes.count
+        let clipboardChangeCountBefore = NSPasteboard.general.changeCount
+        let toastPresentationCountBefore = captureToastController?.presentationCount ?? 0
+        let frontmostApplicationBefore = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let result = captureSelectedText(applicationIdentifier: applicationIdentifier)
         guard let outputArgument = arguments.first(where: { $0.hasPrefix("--capture-diagnostic-output=") }) else {
             return
@@ -362,13 +419,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var report: [String: Any] = [
                 "captured": result != nil,
                 "backgroundUITest": self.backgroundUITest,
-                "keyboardMonitorsInstalled": self.captureMonitor != nil || self.keyMonitor != nil,
+                "keyboardMonitorsInstalled": self.captureMonitor != nil,
+                "globalCaptureMonitorInstalled": self.captureMonitor != nil,
+                "localKeyboardMonitorInstalled": false,
                 "applicationActive": NSApp.isActive,
+                "frontmostApplicationBundleIDBefore": frontmostApplicationBefore ?? NSNull(),
+                "frontmostApplicationBundleIDAfter": NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? NSNull(),
                 "activeSectionID": self.store.activeSectionID?.uuidString ?? NSNull(),
                 "noteID": result?.note.id.uuidString ?? NSNull(),
                 "noteMarkdown": result?.note.markdown ?? NSNull(),
+                "selectionSource": result?.selection.source.rawValue ?? NSNull(),
+                "noteCountBefore": noteCountBefore,
+                "noteCountAfter": self.store.notes.count,
+                "noteDelta": self.store.notes.count - noteCountBefore,
                 "toastExpected": result != nil,
+                "toastPresentationDelta": (self.captureToastController?.presentationCount ?? 0) - toastPresentationCountBefore,
+                "clipboardChangeCountBefore": clipboardChangeCountBefore,
+                "clipboardChangeCountAfter": NSPasteboard.general.changeCount,
+                "clipboardUnchanged": NSPasteboard.general.changeCount == clipboardChangeCountBefore,
             ]
+            if let result, let applicationIdentifier {
+                report["selectionPreservedAfter"] = AccessibilityReader
+                    .selectedSelection(applicationIdentifier: applicationIdentifier)?.markdown == result.selection.markdown
+                report["matchingNoteCountAfter"] = self.store.notes.filter {
+                    $0.markdown == result.note.markdown
+                }.count
+            } else {
+                report["selectionPreservedAfter"] = NSNull()
+                report["matchingNoteCountAfter"] = 0
+            }
+            if let applicationIdentifier {
+                report["selectionProbe"] = AccessibilityReader.selectionProbe(
+                    applicationIdentifier: applicationIdentifier
+                )
+            }
             if let frame = result?.selection.sourceFrame {
                 report["sourceFrame"] = [
                     "x": Double(frame.origin.x),
@@ -378,9 +462,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ]
             } else {
                 report["sourceFrame"] = NSNull()
-            }
-            if result == nil, let applicationIdentifier {
-                report["selectionProbe"] = AccessibilityReader.selectionProbe(applicationIdentifier: applicationIdentifier)
             }
             report["toastState"] = self.captureToastController?.diagnosticState() ?? [
                 "visible": false,
@@ -423,10 +504,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 final class CaptureToastController {
     private var panel: NSPanel?
     private var dismissalTask: Task<Void, Never>?
+    private(set) var presentationCount = 0
+    private var lastMessage: String?
 
     func diagnosticState() -> [String: Any] {
         guard let panel else {
-            return ["visible": false, "isKeyWindow": false, "level": NSNull()]
+            return [
+                "visible": false,
+                "isKeyWindow": false,
+                "level": NSNull(),
+                "presentationCount": presentationCount,
+                "lastMessage": lastMessage ?? NSNull(),
+            ]
         }
         let frame = panel.frame
         return [
@@ -437,11 +526,15 @@ final class CaptureToastController {
             "y": Double(frame.origin.y),
             "width": Double(frame.size.width),
             "height": Double(frame.size.height),
+            "presentationCount": presentationCount,
+            "lastMessage": lastMessage ?? NSNull(),
         ]
     }
 
     func show(message: String, sourceFrame: NSRect?) {
         dismissalTask?.cancel()
+        presentationCount += 1
+        lastMessage = message
         let toast = CopperToast(message: message, kind: .capture)
         let toastSize = NSSize(width: 128, height: 38)
         let toastPanel: NSPanel
@@ -547,18 +640,96 @@ struct CopperCommands: Commands {
     @ObservedObject var store: CopperStore
 
     var body: some Commands {
-        CommandMenu("Copper") {
-            Button("Copy") { _ = store.copySelected(asList: false) }
+        CommandGroup(replacing: .pasteboard) {
+            Button("Cut") {
+                sendTextAction(#selector(NSText.cut(_:)))
+            }
+            .keyboardShortcut("x", modifiers: [.command])
+
+            commandButton("Copy", shortcut: store.preferences.copyShortcut) {
+                if !sendTextAction(#selector(NSText.copy(_:))) {
+                    _ = store.copySelected(asList: false)
+                }
+            }
+
+            if CopperShortcut.parse(store.preferences.copyShortcut)?.canonical != "⌘C" {
+                Button("Copy Text") {
+                    sendTextAction(#selector(NSText.copy(_:)))
+                }
                 .keyboardShortcut("c", modifiers: [.command])
-            Button("Copy as List") { _ = store.copySelected(asList: true) }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
-            Button("Toggle Done") { store.toggleSelectedCompletion() }
-                .keyboardShortcut(.space, modifiers: [])
+            }
+
+            commandButton("Copy as List", shortcut: store.preferences.copyAsListShortcut) {
+                if !isEditingText {
+                    _ = store.copySelected(asList: true)
+                }
+            }
+
+            Button("Paste") {
+                sendTextAction(#selector(NSText.paste(_:)))
+            }
+            .keyboardShortcut("v", modifiers: [.command])
+        }
+
+        CommandMenu("Copper") {
+            commandButton(
+                "Toggle Done",
+                shortcut: store.preferences.markDoneShortcut
+            ) { store.toggleSelectedCompletion() }
             Button("Merge Notes") { store.mergeSelected() }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
             Divider()
             Button("Clear Selection") { store.clearSelection() }
                 .keyboardShortcut(.escape, modifiers: [])
         }
+    }
+
+    private var isEditingText: Bool {
+        NSApp.keyWindow?.firstResponder is NSTextView
+    }
+
+    @discardableResult
+    private func sendTextAction(_ action: Selector) -> Bool {
+        guard isEditingText else { return false }
+        return NSApp.sendAction(action, to: NSApp.keyWindow?.firstResponder, from: nil)
+    }
+
+    @ViewBuilder
+    private func commandButton(
+        _ title: String,
+        shortcut rawShortcut: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        if let shortcut = CopperShortcut.parse(rawShortcut),
+           let equivalent = shortcut.keyEquivalent {
+            Button(title, action: action)
+                .keyboardShortcut(equivalent, modifiers: shortcut.eventModifiers)
+        } else {
+            Button(title, action: action)
+        }
+    }
+}
+
+private extension CopperShortcut {
+    var keyEquivalent: KeyEquivalent? {
+        guard case let .key(key, _) = trigger else { return nil }
+        switch key {
+        case "SPACE": return .space
+        case "ENTER": return .return
+        case "ESCAPE": return .escape
+        default:
+            guard key.count == 1, let character = key.lowercased().first else { return nil }
+            return KeyEquivalent(character)
+        }
+    }
+
+    var eventModifiers: EventModifiers {
+        guard case let .key(_, modifiers) = trigger else { return [] }
+        var result: EventModifiers = []
+        if modifiers.contains(.command) { result.insert(.command) }
+        if modifiers.contains(.shift) { result.insert(.shift) }
+        if modifiers.contains(.option) { result.insert(.option) }
+        if modifiers.contains(.control) { result.insert(.control) }
+        return result
     }
 }

@@ -425,46 +425,52 @@ Do not treat colours sampled from the compressed marketing video as canonical de
 
 ## 11. Clone Acceptance Criteria
 
-### Functional parity
+An `[x]` below means implemented and backed by formal or observed evidence in
+section 17 and `docs/ux-verification.md`. It does **not** mean pixel-perfect,
+one-to-one or hidden-behaviour parity. Visual items are observed
+approximations; public evidence cannot establish exact internal values.
 
-- [ ] Global selected-text capture works from supported macOS apps.
-- [ ] Default capture gesture is double `Shift`.
-- [ ] Capture shows a `Captured` toast.
-- [ ] Captured text appears as a note in the active/current section.
-- [ ] Markdown emphasis renders in note previews.
-- [ ] Composer can create successive queued prompts.
-- [ ] Notes can be searched.
-- [ ] Notes can be grouped into sections.
-- [ ] Multiple notes can be selected.
-- [ ] `⌘C` copies selected content.
-- [ ] `⇧⌘C` copies a deterministic numbered list.
-- [ ] Copy as List marks emitted items done and shows `Copied as List`.
-- [ ] `Space` toggles completion for selected items.
-- [ ] Edit, Edit in New Window, Merge Notes and Move to exist.
-- [ ] Shortcuts are customisable.
-- [ ] Notes survive relaunch through local persistence.
-- [ ] No account or note synchronisation is required.
+### Functional acceptance
 
-### Visual parity
+- [x] Global selected-text capture works from supported macOS apps.
+- [x] Default capture gesture is double `Shift`.
+- [x] Capture shows a `Captured` toast.
+- [x] Captured text appears as a note in the active/current section.
+- [x] Markdown emphasis renders in note previews.
+- [x] Composer can create successive queued prompts.
+- [x] Notes can be searched.
+- [x] Notes can be grouped into sections.
+- [x] Multiple notes can be selected.
+- [x] `⌘C` copies selected content.
+- [x] `⇧⌘C` copies a deterministic numbered list.
+- [x] Copy as List marks emitted items done and shows `Copied as List`.
+- [x] `Space` toggles completion for selected items.
+- [x] Edit, Edit in New Window, Merge Notes and Move to exist.
+- [x] Shortcuts are customisable.
+- [x] Notes survive relaunch through local persistence.
+- [x] No account or note synchronisation is required.
 
-- [ ] Narrow floating utility window with large rounded corners.
-- [ ] Cool translucent panel material and soft shadow.
-- [ ] Search pill and circular ellipsis button at top.
-- [ ] Uppercase section labels with divider rules.
-- [ ] White rounded cards with leading circular state control.
-- [ ] Blue selection outline.
-- [ ] Blue completed checkmark and strikethrough.
-- [ ] Bottom composer visually matches a note card.
-- [ ] Native-looking macOS contextual menu and keyboard glyphs.
-- [ ] Capture and copy toasts match the two demonstrated treatments.
+### Visual acceptance (observed approximation)
 
-### Privacy parity
+- [x] Narrow floating utility window with large rounded corners.
+- [x] Cool translucent panel material and soft shadow.
+- [x] Search pill and circular ellipsis button at top.
+- [x] Uppercase section labels with divider rules.
+- [x] White rounded cards with leading circular state control.
+- [x] Blue selection outline.
+- [x] Blue completed checkmark and strikethrough.
+- [x] Bottom composer visually matches a note card.
+- [x] Native-looking macOS contextual menu and keyboard glyphs.
+- [x] Capture and copy toasts match the two demonstrated treatments as an
+  approximation.
 
-- [ ] Notes remain on-device.
-- [ ] No application analytics or telemetry.
-- [ ] No crash reports or usage-data uploads.
-- [ ] Update checks never include note content.
-- [ ] Privacy documentation distinguishes the app from website analytics.
+### Privacy acceptance
+
+- [x] Notes remain on-device.
+- [x] No application analytics or telemetry.
+- [x] No crash reports or usage-data uploads.
+- [x] No update client exists, so note content cannot enter update checks.
+- [x] Privacy documentation distinguishes the app from website analytics.
 
 ---
 
@@ -582,26 +588,54 @@ The original conclusion still stands: the public page plus the supplied marketin
 
 ## 17. Reconstruction verification status (2026-07-31)
 
-The implementation in this repository now covers the following observable or
-explicitly scoped behaviours: active-section routing and persistence,
-reversible Space completion, configurable capture shortcut parsing with
-conflict detection and reset, Accessibility attributed-text conversion to
-Markdown with a plain-text fallback, a non-activating source-positioned toast,
-separate Expand and Edit-in-New-Window paths, the composer focus control,
-reduced-motion/contrast/accessibility affordances, and local-only persistence.
+The current reconstruction implements active-section routing and persistence,
+search/sections, deterministic multi-note operations, reversible completion,
+configurable capture parsing/conflict/reset, Accessibility attributed-text
+conversion with Markdown-escaped literal plain fallback, a nonactivating
+selection-positioned toast,
+separate Expand/inline-edit/new-window paths, a card-like composer,
+accessibility render paths and local-only persistence. Production retains its
+floating `CopperPanel`, an `NSPanel` subclass that can become key for text and
+card controls without becoming main. Its only system event monitor is the
+observational global capture monitor; in-app shortcuts use native menu/key
+handlers, so no local event monitor consumes or replaces input and no code
+reposts events. Custom global shortcuts require Command plus another modifier,
+and Control-Option is rejected as the VoiceOver modifier. This reduces, but
+cannot eliminate, conflicts with shortcuts owned by third-party source apps.
 
-Model-level evidence is provided by a formal Swift Testing suite discovered and
-executed by `swift test` (10/10). Controlled background-mode
-runtime evidence now covers real selections in TextEdit, Safari and Chrome
-through a test-only capture-on-launch route that installs no keyboard monitor.
-Safari uses WebKit text-marker Accessibility attributes; Chrome was validated
-with an isolated `example.com` tab and exactly one persisted matching note.
-An isolated VS Code/Electron profile was exercised with a real AX selection and
-exactly one persisted matching note. A separate background-window diagnostic
-rendered forced Reduce Motion, non-colour differentiation, increased contrast
-and accessibility-scale paths on the second of two detected displays; the AX
-tree was inspected without foregrounding Copper. Spoken VoiceOver output,
-end-to-end keyboard focus/Space routing, and live production full-screen/cross-
-Space placement were not activated while the user was working. The exact
-evidence and limitations are recorded in `docs/ux-verification.md`; none is
-treated as proof of pixel-level or hidden one-to-one parity.
+The formal Swift Testing suite is discovered and executed by SwiftPM (18/18).
+Current controlled background evidence covers real rich selections in TextEdit,
+Safari and Chrome. Every final report records exactly one new note, exactly one
+`Captured` toast, a preserved source selection, unchanged clipboard, inactive
+Copper, unchanged frontmost app and zero test-mode monitors. Chrome's first run
+exposed an AX font/bounds defect; the repeated fixed run produced bold Markdown
+and a valid selection-relative toast frame. The exact signed bundle passed TCC,
+codesign, debug/release build, packaging, smoke, script syntax and diff checks.
+A source/binary/entitlements/socket audit found no native-app network,
+analytics, telemetry, crash-upload, sync or note-content upload path.
+
+The current background window was inspected by Computer Use on the second of
+two displays, both normally and with forced Reduce Motion, Differentiate Without
+Color, Increased Contrast and accessibility-scale paths. The AX tree exposes
+card labels, values and actions. This is runtime evidence for rendering and AX
+structure, not for spoken VoiceOver.
+
+The authorised foreground block exercised the exact production panel. Physical
+default double-Shift and `Command-Control-Shift-C` runs each produced one note
+and one toast per gesture with unchanged selection/clipboard, the same active
+TextEdit, inactive Copper and a non-key toast. An attempted Control-Option-C
+run demonstrated source-app interference and drove the stricter validation.
+Computer Use then verified Search, section creation, Composer + Return,
+multi-selection, Space, Command-Space, focused `Command-C`, focused
+`Shift-Command-C`, a custom persisted Copy shortcut, native text-field copy,
+completion, Merge, Move, Expand, Return, Command-Return, full Tab traversal,
+separate editor window and relaunch persistence. The production panel remained
+visible in a real TextEdit full-screen Space.
+
+The following criteria remain unproved rather than failed: a current isolated
+Electron/plain-only fallback repetition; spoken VoiceOver announcements; an
+actual cross-Space transition; and production multi-monitor movement during the
+foreground block, where only one display was exposed. These items remain
+`PARTIAL` or `BLOCKED` in `docs/ux-verification.md`. Visual matching remains an
+evidence-based approximation; neither pixel-perfect nor hidden one-to-one
+parity is claimed.

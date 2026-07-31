@@ -1,0 +1,31 @@
+{
+  "applicationActive" : false,
+  "captured" : false,
+  "clipboardChangeCountAfterLatestGesture" : 2316,
+  "clipboardChangeCountBeforeLatestGesture" : 2316,
+  "clipboardUnchangedLatestGesture" : true,
+  "frontmostApplicationBundleIDAfter" : "com.apple.TextEdit",
+  "frontmostApplicationBundleIDBefore" : "com.apple.TextEdit",
+  "gestureCount" : 4,
+  "globalCaptureMonitorInstalled" : true,
+  "localKeyboardMonitorInstalled" : false,
+  "matchingNoteCountAfter" : 0,
+  "noteCountAfterLatestGesture" : 4,
+  "noteCountBeforeLatestGesture" : 4,
+  "noteDeltaLatestGesture" : 0,
+  "noteID" : null,
+  "noteMarkdown" : null,
+  "selectionPreservedAfter" : null,
+  "selectionSource" : null,
+  "sourceApplicationRemainedActive" : true,
+  "sourceFrame" : null,
+  "successCount" : 0,
+  "toastPresentationDeltaLatestGesture" : 0,
+  "toastState" : {
+    "isKeyWindow" : false,
+    "lastMessage" : null,
+    "level" : null,
+    "presentationCount" : 0,
+    "visible" : false
+  }
+}

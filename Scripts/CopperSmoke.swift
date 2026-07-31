@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 @main
@@ -15,7 +16,8 @@ struct CopperSmoke {
 
         store.toggleSelection(first.id)
         store.toggleSelection(second.id)
-        precondition(store.copySelected(asList: true) == "1. First prompt\n2. Second prompt")
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("CopperSmoke-\(UUID().uuidString)"))
+        precondition(store.copySelected(asList: true, to: pasteboard) == "1. First prompt\n2. Second prompt")
         precondition(store.notes.allSatisfy(\.isCompleted))
 
         store.searchText = "first"

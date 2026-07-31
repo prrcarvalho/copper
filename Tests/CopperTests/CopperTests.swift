@@ -11,6 +11,18 @@ struct CopperTests {
             .appendingPathComponent("CopperTests-\(name)-\(UUID().uuidString).json")
     }
 
+    @Test("Production panel can accept keyboard focus without becoming main")
+    func productionPanelFocusContract() {
+        let panel = CopperPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        #expect(panel.canBecomeKey)
+        #expect(!panel.canBecomeMain)
+    }
+
     @Test("Active section routes new notes and persists")
     func activeSectionRoutesNotesAndPersists() throws {
         let url = temporaryURL("active-section")
@@ -27,6 +39,26 @@ struct CopperTests {
 
         let reloaded = CopperStore(fileURL: url, seedIfEmpty: false)
         #expect(reloaded.activeSectionID == second.id)
+    }
+
+    @Test("Successive prompts remain ordered and search filters their section")
+    func successivePromptsAndSearch() throws {
+        let url = temporaryURL("successive-search")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let queue = store.addSection(title: "Queue")
+        _ = try #require(store.addNote(markdown: "First queued prompt"))
+        _ = try #require(store.addNote(markdown: "Second queued prompt"))
+
+        #expect(store.visibleNotes(for: queue).map(\.markdown) == [
+            "First queued prompt",
+            "Second queued prompt",
+        ])
+        store.searchText = "second"
+        #expect(store.visibleNotes(for: queue).map(\.markdown) == ["Second queued prompt"])
+        store.searchText = "missing"
+        #expect(store.visibleNotes(for: queue).isEmpty)
     }
 
     @Test("Selected completion toggles both directions")
@@ -67,21 +99,47 @@ struct CopperTests {
         let doubleShift = try #require(CopperShortcut.parse("Shift + Shift"))
         #expect(doubleShift.trigger == .doubleShift)
         #expect(doubleShift.isSafeGlobalCapture)
+        #expect(CopperShortcut.parse("Double Shift")?.trigger == .doubleShift)
 
         let commandShiftC = try #require(CopperShortcut.parse("⌘⇧C"))
         #expect(commandShiftC.canonical == "⌘⇧C")
         #expect(commandShiftC.isSafeGlobalCapture)
         #expect(CopperShortcut.parse("A")?.isSafeGlobalCapture == false)
+        #expect(CopperShortcut.parse("⌥C")?.isSafeGlobalCapture == false)
+        #expect(CopperShortcut.parse("⌃C")?.isSafeGlobalCapture == false)
+        #expect(CopperShortcut.parse("⌘C")?.isSafeGlobalCapture == false)
+        let voiceOverShortcut = try #require(CopperShortcut.parse("⌃⌥C"))
+        #expect(voiceOverShortcut.usesVoiceOverModifier)
+        #expect(!voiceOverShortcut.isSafeGlobalCapture)
 
         var preferences = CopperPreferences()
         preferences.captureShortcut = preferences.copyShortcut
         #expect(preferences.captureShortcutValidationMessage != nil)
         preferences.captureShortcut = "A"
         #expect(preferences.captureShortcutValidationMessage != nil)
+        preferences.captureShortcut = "⌃⌥C"
+        #expect(
+            preferences.captureShortcutValidationMessage
+                == "Control + Option is reserved for VoiceOver and may alter source-app input."
+        )
+        preferences.captureShortcut = "⌘⌃⇧C"
+        #expect(preferences.captureShortcutValidationMessage == nil)
         preferences.captureShortcut = "not a shortcut with two keys"
         #expect(preferences.captureShortcutValidationMessage != nil)
         preferences.captureShortcut = "Shift + Shift"
         #expect(preferences.captureShortcutValidationMessage == nil)
+
+        let url = temporaryURL("shortcut-preferences")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        store.preferences.copyShortcut = "⌘⇧K"
+        store.preferences.copyAsListShortcut = "⌘⇧L"
+        store.preferences.markDoneShortcut = "⌘⇧D"
+        store.save()
+        let reloaded = CopperStore(fileURL: url, seedIfEmpty: false)
+        #expect(reloaded.preferences.copyShortcut == "⌘⇧K")
+        #expect(reloaded.preferences.copyAsListShortcut == "⌘⇧L")
+        #expect(reloaded.preferences.markDoneShortcut == "⌘⇧D")
     }
 
     @Test("Attributed capture converts emphasis and links with plain fallback")
@@ -102,6 +160,116 @@ struct CopperTests {
         #expect(markdown.contains("**Bold**"))
         #expect(markdown.contains("[link](https://example.com)"))
         #expect(MarkdownConverter.markdown(from: "plain fallback") == "plain fallback")
+        let literalPlain = "literal **not bold** [not a link] #1"
+        let escapedPlain = try #require(MarkdownConverter.markdown(from: literalPlain))
+        #expect(escapedPlain == "literal \\*\\*not bold\\*\\* \\[not a link\\] #1")
+        #expect(MarkdownConverter.plainText(from: escapedPlain) == literalPlain)
+        let plainBlocks = "# literal heading\n1. literal item\n- literal bullet"
+        let escapedBlocks = try #require(MarkdownConverter.markdown(from: plainBlocks))
+        #expect(escapedBlocks == "\\# literal heading\n1\\. literal item\n\\- literal bullet")
+        #expect(MarkdownConverter.plainText(from: escapedBlocks) == plainBlocks)
+
+        let accessibilityAttributed = NSMutableAttributedString(string: "AX Bold and AX Italic")
+        accessibilityAttributed.addAttribute(
+            .accessibilityFont,
+            value: [
+                NSAccessibility.FontAttributeKey.fontName: "Helvetica-Bold",
+                .fontSize: 14,
+            ],
+            range: NSRange(location: 0, length: 7)
+        )
+        accessibilityAttributed.addAttribute(
+            .accessibilityFont,
+            value: [
+                NSAccessibility.FontAttributeKey.fontName: "Helvetica-Oblique",
+                .fontSize: 14,
+            ],
+            range: NSRange(location: 12, length: 9)
+        )
+        #expect(MarkdownConverter.markdown(from: accessibilityAttributed) == "**AX Bold** and *AX Italic*")
+
+        let modernAccessibilityAttributed = NSAttributedString(
+            string: "Modern bold",
+            attributes: [
+                .accessibilityFont: [
+                    NSAccessibility.FontAttributeKey.fontSize: 24,
+                    "AXFontBold": 1,
+                ],
+            ]
+        )
+        #expect(MarkdownConverter.markdown(from: modernAccessibilityAttributed) == "**Modern bold**")
+    }
+
+    @Test("One captured selection creates exactly one note in the active section")
+    func captureCardinalityIsExactlyOne() throws {
+        let url = temporaryURL("capture-cardinality")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let first = store.addSection(title: "First")
+        let active = store.addSection(title: "Active")
+        store.setActiveSection(active.id)
+        let before = store.notes.count
+
+        let note = try #require(store.capture(CapturedSelection(
+            markdown: "**Exactly one** captured note",
+            sourceFrame: NSRect(x: 20, y: 30, width: 140, height: 22)
+        )))
+
+        #expect(store.notes.count - before == 1)
+        #expect(note.sectionID == active.id)
+        #expect(note.sectionID != first.id)
+        #expect(store.notes.filter { $0.id == note.id }.count == 1)
+    }
+
+    @Test("Copy and Copy as List preserve display order and list completion")
+    func copyOperationsPreserveOrderAndCompletion() throws {
+        let url = temporaryURL("copy")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let first = try #require(store.addNote(markdown: "**First** and *italic*", sectionID: section.id))
+        let second = try #require(store.addNote(markdown: "[Second](https://example.com)", sectionID: section.id))
+        store.toggleSelection(second.id)
+        store.toggleSelection(first.id)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("CopperTests-\(UUID().uuidString)"))
+
+        #expect(store.copySelected(asList: false, to: pasteboard) == "**First** and *italic*\n\n[Second](https://example.com)")
+        #expect(pasteboard.string(forType: .string) == "**First** and *italic*\n\n[Second](https://example.com)")
+        #expect(store.notes.allSatisfy { !$0.isCompleted })
+        #expect(store.toast?.message == "Copied")
+
+        #expect(store.copySelected(asList: true, using: { _ in false }) == nil)
+        #expect(store.notes.allSatisfy { !$0.isCompleted })
+        #expect(store.toast?.message == "Could not copy")
+
+        #expect(store.copySelected(asList: true, to: pasteboard) == "1. First and italic\n2. Second")
+        #expect(pasteboard.string(forType: .string) == "1. First and italic\n2. Second")
+        #expect(store.notes.allSatisfy { $0.isCompleted })
+        #expect(store.toast?.message == "Copied as List")
+    }
+
+    @Test("Merge preserves visual order and survives relaunch")
+    func mergePreservesOrderAndPersists() throws {
+        let url = temporaryURL("merge-persistence")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let first = try #require(store.addNote(markdown: "first", sectionID: section.id))
+        let second = try #require(store.addNote(markdown: "second", sectionID: section.id))
+        store.toggleSelection(second.id)
+        store.toggleSelection(first.id)
+        store.mergeSelected()
+
+        #expect(store.notes.count == 1)
+        #expect(store.notes.first?.id == first.id)
+        #expect(store.notes.first?.markdown == "first\n\nsecond")
+
+        let reloaded = CopperStore(fileURL: url, seedIfEmpty: false)
+        #expect(reloaded.notes.count == 1)
+        #expect(reloaded.notes.first?.markdown == "first\n\nsecond")
     }
 
     @Test("Expand state stays separate from editing")
@@ -118,14 +286,76 @@ struct CopperTests {
         #expect(store.editingID == nil)
     }
 
+    @Test("Edit in New Window requests a distinct editor without entering inline edit")
+    func editInNewWindowIsDistinct() throws {
+        let url = temporaryURL("new-window")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let note = try #require(store.addNote(markdown: "edit separately", sectionID: section.id))
+        store.expandedID = note.id
+        var requestedID: UUID?
+        store.openEditor = { requestedID = $0 }
+
+        #expect(store.handleCardReturn(noteID: note.id, openInNewWindow: true))
+        #expect(requestedID == note.id)
+        #expect(store.editingID == nil)
+        #expect(store.expandedID == note.id)
+
+        #expect(store.handleCardReturn(noteID: note.id, openInNewWindow: false))
+        #expect(store.editingID == note.id)
+        #expect(requestedID == note.id)
+    }
+
+    @Test("Default double Shift fires once for one completed gesture")
+    func defaultDoubleShiftFiresOnce() throws {
+        var callbackCount = 0
+        let monitor = GlobalCaptureMonitor { callbackCount += 1 }
+        let firstDown = try #require(shiftEvent(isDown: true, timestamp: 1))
+        let firstUp = try #require(shiftEvent(isDown: false, timestamp: 1.1))
+        let secondDown = try #require(shiftEvent(isDown: true, timestamp: 1.2))
+
+        monitor.processForTesting(firstDown)
+        monitor.processForTesting(firstUp)
+        monitor.processForTesting(secondDown)
+        monitor.processForTesting(secondDown)
+
+        #expect(callbackCount == 1)
+        monitor.stop()
+    }
+
+    @Test("Double Shift ignores gestures combined with another modifier")
+    func defaultDoubleShiftRejectsConflictingModifiers() throws {
+        var callbackCount = 0
+        let monitor = GlobalCaptureMonitor { callbackCount += 1 }
+        let commandShiftDown = try #require(shiftEvent(
+            isDown: true,
+            timestamp: 1,
+            modifiers: [.command, .shift]
+        ))
+        let commandShiftUp = try #require(shiftEvent(
+            isDown: false,
+            timestamp: 1.1,
+            modifiers: [.command]
+        ))
+
+        monitor.processForTesting(commandShiftDown)
+        monitor.processForTesting(commandShiftUp)
+        monitor.processForTesting(commandShiftDown)
+
+        #expect(callbackCount == 0)
+        monitor.stop()
+    }
+
     @Test("Repeated capture events fire once and are never reposted")
     func repeatedCaptureEventIsDeduplicated() throws {
         var callbackCount = 0
-        let monitor = GlobalCaptureMonitor(shortcut: "⌘A") { callbackCount += 1 }
+        let monitor = GlobalCaptureMonitor(shortcut: "⌘⇧A") { callbackCount += 1 }
         let event = try #require(NSEvent.keyEvent(
             with: .keyDown,
             location: .zero,
-            modifierFlags: [.command],
+            modifierFlags: [.command, .shift],
             timestamp: 1,
             windowNumber: 0,
             context: nil,
@@ -144,12 +374,12 @@ struct CopperTests {
     @Test("Updating capture shortcut replaces the prior match")
     func captureShortcutUpdateReconfiguresMatching() throws {
         var callbackCount = 0
-        let monitor = GlobalCaptureMonitor(shortcut: "⌘A") { callbackCount += 1 }
+        let monitor = GlobalCaptureMonitor(shortcut: "⌘⇧A") { callbackCount += 1 }
         let aEvent = try #require(keyEvent(key: "a", keyCode: 0, timestamp: 1))
         let bEvent = try #require(keyEvent(key: "b", keyCode: 11, timestamp: 2))
 
         monitor.processForTesting(aEvent)
-        monitor.update(shortcut: "⌘B")
+        monitor.update(shortcut: "⌘⇧B")
         monitor.processForTesting(aEvent)
         Thread.sleep(forTimeInterval: 0.5)
         monitor.processForTesting(bEvent)
@@ -161,7 +391,7 @@ struct CopperTests {
     @Test("Unsafe shortcut updates cannot replace a safe monitor configuration")
     func unsafeShortcutUpdateIsRejected() throws {
         var callbackCount = 0
-        let monitor = GlobalCaptureMonitor(shortcut: "⌘A") { callbackCount += 1 }
+        let monitor = GlobalCaptureMonitor(shortcut: "⌘⇧A") { callbackCount += 1 }
         let aEvent = try #require(keyEvent(key: "a", keyCode: 0, timestamp: 1))
         let plainBEvent = try #require(keyEvent(
             key: "b",
@@ -202,7 +432,7 @@ struct CopperTests {
         key: String,
         keyCode: UInt16,
         timestamp: TimeInterval,
-        modifiers: NSEvent.ModifierFlags = [.command]
+        modifiers: NSEvent.ModifierFlags = [.command, .shift]
     ) -> NSEvent? {
         NSEvent.keyEvent(
             with: .keyDown,
@@ -215,6 +445,25 @@ struct CopperTests {
             charactersIgnoringModifiers: key,
             isARepeat: false,
             keyCode: keyCode
+        )
+    }
+
+    private func shiftEvent(
+        isDown: Bool,
+        timestamp: TimeInterval,
+        modifiers: NSEvent.ModifierFlags? = nil
+    ) -> NSEvent? {
+        NSEvent.keyEvent(
+            with: .flagsChanged,
+            location: .zero,
+            modifierFlags: modifiers ?? (isDown ? [.shift] : []),
+            timestamp: timestamp,
+            windowNumber: 0,
+            context: nil,
+            characters: "",
+            charactersIgnoringModifiers: "",
+            isARepeat: false,
+            keyCode: 56
         )
     }
 }
