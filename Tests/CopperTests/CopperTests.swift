@@ -15,12 +15,76 @@ struct CopperTests {
     func productionPanelFocusContract() {
         let panel = CopperPanel(
             contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
-            styleMask: [.borderless, .nonactivatingPanel, .resizable],
+            styleMask: CopperPanel.companionStyleMask,
             backing: .buffered,
             defer: false
         )
         #expect(panel.canBecomeKey)
         #expect(!panel.canBecomeMain)
+    }
+
+    @Test("Production panel keeps native drag, resize, close and minimize affordances")
+    func productionPanelNativeShellContract() {
+        let panel = CopperPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
+            styleMask: CopperPanel.companionStyleMask,
+            backing: .buffered,
+            defer: false
+        )
+        panel.setFrame(NSRect(x: -200, y: -100, width: 800, height: 900), display: false)
+        let constraintsApplied = panel.applyCompanionConstraints(
+            to: NSRect(x: 0, y: 0, width: 1440, height: 900)
+        )
+        panel.isMovableByWindowBackground = true
+
+        #expect(panel.styleMask.contains(.titled))
+        #expect(panel.styleMask.contains(.fullSizeContentView))
+        #expect(panel.styleMask.contains(.nonactivatingPanel))
+        #expect(panel.styleMask.contains(.resizable))
+        #expect(panel.styleMask.contains(.closable))
+        #expect(panel.styleMask.contains(.miniaturizable))
+        #expect(panel.isResizable)
+        #expect(panel.isMovable)
+        #expect(panel.isMovableByWindowBackground)
+        #expect(constraintsApplied)
+        #expect(panel.minSize == CopperWindowGeometry.minimumSize)
+        #expect(panel.maxSize.width == 620)
+        #expect(panel.maxSize.height == 876)
+        #expect(panel.frame == NSRect(x: 0, y: 0, width: 620, height: 876))
+    }
+
+    @Test("Companion frame restoration clamps off-screen and oversized frames")
+    func companionFrameRestorationClampsToVisibleScreen() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let firstLaunch = CopperWindowGeometry.centeredFrame(in: visible)
+        #expect(firstLaunch.size == CopperWindowGeometry.initialSize)
+        #expect(firstLaunch.midX == visible.midX)
+        #expect(firstLaunch.midY == visible.midY)
+
+        let restored = CopperWindowGeometry.clampedFrame(
+            NSRect(x: -800, y: -500, width: 1400, height: 1400),
+            to: visible
+        )
+        #expect(restored.size.width == 620)
+        #expect(restored.size.height == 876)
+        #expect(restored.minX == visible.minX)
+        #expect(restored.minY == visible.minY)
+        #expect(restored.maxX == visible.minX + 620)
+        #expect(restored.maxY == visible.minY + 876)
+    }
+
+    @Test("Command-W close contract hides without destroying the panel")
+    func companionCloseHidesPanel() {
+        let panel = CopperPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
+            styleMask: CopperPanel.companionStyleMask,
+            backing: .buffered,
+            defer: false
+        )
+        panel.orderFront(nil)
+        panel.performClose(nil)
+        #expect(!panel.isVisible)
+        panel.orderOut(nil)
     }
 
     @Test("Active section routes new notes and persists")

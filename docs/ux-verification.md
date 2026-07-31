@@ -13,10 +13,11 @@ one-to-one parity for every internal detail.
 
 ```text
 Scripts/BuildApp.sh                                      PASS
+Scripts/InstallApp.sh                                    PASS (bundle installed and validated at /Applications/Copper.app)
 swift build                                              PASS
 swift build -c release                                   PASS
-swift test                                                PASS (18 tests executed)
-swift test list                                           PASS (18 tests discovered)
+swift test                                                PASS (21 tests executed)
+swift test list                                           PASS (21 tests discovered)
 swiftc -parse-as-library Sources/CopperCore/Models.swift \
   Scripts/CopperSmoke.swift -o .build/CopperSmoke && \
   .build/CopperSmoke                                        PASS
@@ -36,6 +37,36 @@ plain fallback, exactly-one capture ingestion, double-Shift
 deduplication, conflicting-modifier rejection, rejection of source-destructive
 custom combinations, the no-repost invariant, and the production panel's
 key-without-main focus contract.
+
+## Production companion shell polish
+
+The exact signed production bundle was rebuilt after the shell change and its
+window diagnostic recorded: `activationPolicy=0` (regular),
+`windowClass=CopperPanel`, `styleMaskRawValue=32911` (titled, full-size content,
+nonactivating, resizable, closable and miniaturizable), floating level 3,
+collection behaviour 257 (all Spaces + full-screen auxiliary), hidden close /
+miniaturize / zoom buttons, `isMovable=true`,
+`isMovableByWindowBackground=true`, `isResizable=true`, autosave name
+`CopperCompanionPanel`, `minimumSize=320×420`, `maximumSize=620×914` on the
+current visible frame, and a `320×442` restored frame from the existing saved
+state. The formal geometry case covers the first-launch centered `430×760`
+frame.
+The drag strip's AppKit hit-test class was `CopperDragStripView`.
+
+The installed `/Applications/Copper.app` was exercised with Computer Use:
+`⌘W` hid the only panel without terminating the process, `⌘0` restored it,
+`⌘M` minimised it and a second `⌘0` restored it. Launch Services reopening the
+hidden app showed the same single window. The regular activation policy and
+bundle metadata provide the Dock/Command-Tab identity; a separate physical
+Dock click and Command-Tab gesture were not synthesised by Computer Use.
+
+The native edge-resize path is present and the panel's minimum/maximum limits
+are enforced in the exact-bundle diagnostic. An interior Computer Use drag in
+this session did hit the dedicated AppKit strip, but the Computer Use backend
+did not deliver a final pointer delta to the panel, so no `AXPosition` change is
+claimed here. The implementation keeps the native AppKit mouse path and frame
+autosave; a real user pointer drag remains the required manual confirmation for
+that one interaction.
 
 ## Background Computer Use mode
 
@@ -116,6 +147,7 @@ report records that limitation.
 | Chrome runtime | Temporary `example.com` tab exposed `attributedRange`; after AX font/bounds fixes it captured `**Example Domain**` with real selection bounds | **PASS (rich diagnostic route)** |
 | Electron/plain runtime | Real VS Code Electron Untitled editor selection captured exactly one plain note and one `Captured` toast; clipboard and selection were preserved, Copper stayed inactive/non-key and background monitors were zero | **PASS (runtime); no-AX-attributed-text branch remains formal-only** |
 | Spaces/full-screen/multiple monitors | Production `CopperPanel`/`NSPanel` remained visible and AX-addressable after one real `Control-Right` transition; the foreground session exposed one display | **PASS for full-screen and observed cross-Space transition; multi-monitor production blocked by single-display hardware/session** |
+| Production shell, lifecycle and install | Exact-bundle diagnostic proved regular policy, native titled/resizable/closable/miniaturizable mask, hidden traffic lights, floating/all-Spaces/full-screen collection, autosave, `320×420` minimum and `620` maximum width. Installed bundle Computer Use proved `⌘W`, `⌘M`, `⌘0` hide/minimise/restore and Launch Services reopen; icon/codesign/registration checks passed | **PASS for implemented shell and lifecycle; interior pointer drag remains manual because this Computer Use session delivered no AX position delta** |
 | Visual one-to-one parity | Supplied frames support an approximation of hierarchy, not hidden/internal behaviour | **APPROXIMATION** |
 
 ## Visual comparison register
@@ -260,6 +292,10 @@ Current evidence is retained under
   `production-edit-new-window-foreground.jpeg` and
   `production-panel-fullscreen.jpeg`;
 - `privacy-network-audit.md`.
+- `production-panel-polish.json` and `background-window-polish.json`, the exact
+  final shell diagnostics;
+- `icon-and-install-polish.md` and `companion-lifecycle-polish.md`, the icon,
+  installation and lifecycle handoff notes.
 
 ## Accessibility/TCC boundary
 

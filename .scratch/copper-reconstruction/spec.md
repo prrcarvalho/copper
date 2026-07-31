@@ -1,6 +1,6 @@
 # Copper native reconstruction
 
-Status: implemented with explicit runtime and parity limitations
+Status: implemented and polished with explicit runtime and parity limitations
 
 ## Objective
 
@@ -14,6 +14,14 @@ hidden behaviour.
 - Keep production as a nonactivating floating `NSPanel` across Spaces. The
   concrete `CopperPanel` may become key for focused controls without becoming
   the main window or activating the app.
+- Use a regular production activation policy so the personal app has a Dock
+  icon and participates in Command-Tab, while background UI-test launches set
+  the policy to accessory and use a normal-level `NSWindow`.
+- Give the production panel a native titled/resizable/closable/miniaturizable
+  shell with hidden traffic lights, a `320×420` minimum, a `430×760` first-run
+  size, a `620` maximum width and visible-screen frame clamping. Restore the
+  saved frame when possible; this is a usability improvement and not a claim
+  about the original Copper's hidden window implementation.
 - Capture selected text into the active section with a configurable, globally
   safe shortcut and a nonactivating toast near the source selection.
 - Preserve supported attributed formatting as Markdown, with a plain-text
@@ -44,13 +52,17 @@ hidden behaviour.
   observational, no implementation can guarantee that an accepted combination
   is unused by every source application.
 - No test route posts or re-emits keyboard events.
+- Build the supplied `Resources/AppIcon-source.png` into a deterministic native
+  `.icns` resource and expose it through the bundle metadata. Installation to
+  `/Applications/Copper.app` is local-only and keeps an older bundle in Trash.
 
 ## Acceptance and evidence
 
 - `Scripts/BuildApp.sh`, `swift build`, release build and signature validation
   must pass.
 - `swift test` must discover and execute the formal suite, not merely compile a
-  test target. The current suite discovers and executes 18 cases.
+  test target. The current suite discovers and executes 21 cases, including
+  native panel style, geometry and close contracts.
 - Runtime evidence and its limits are recorded only in
   `docs/ux-verification.md`.
 - Real rich-text selections have controlled runtime evidence in TextEdit,

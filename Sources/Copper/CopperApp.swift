@@ -19,7 +19,7 @@ struct CopperApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let store: CopperStore
     private let arguments: [String]
     private let backgroundUITest: Bool
@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var captureToastController: CaptureToastController?
     private var liveCaptureGestureCount = 0
     private var liveCaptureSuccessCount = 0
+    private var showPanelObserver: NSObjectProtocol?
+    private var hidePanelObserver: NSObjectProtocol?
 
     override init() {
         let arguments = ProcessInfo.processInfo.arguments
@@ -46,10 +48,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.store = CopperStore()
         }
         super.init()
+
+        showPanelObserver = NotificationCenter.default.addObserver(
+            forName: .copperShowPanel,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.showCopper(activate: true)
+            }
+        }
+        hidePanelObserver = NotificationCenter.default.addObserver(
+            forName: .copperHidePanel,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.panel?.orderOut(nil)
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(backgroundUITest ? .accessory : .regular)
 
         if backgroundUITest {
             let testWindow = NSWindow(
@@ -81,12 +102,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.deactivate()
             self.panel = testWindow
         } else {
+            let visibleFrame = visibleFrame(for: nil)
             let panel = CopperPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
-                styleMask: [.borderless, .nonactivatingPanel, .resizable],
+                contentRect: CopperWindowGeometry.centeredFrame(in: visibleFrame),
+                styleMask: CopperPanel.companionStyleMask,
                 backing: .buffered,
                 defer: false
             )
+            panel.title = "Copper"
             panel.isFloatingPanel = true
             panel.level = .floating
             panel.appearance = NSAppearance(named: .aqua)
@@ -97,14 +120,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.hasShadow = true
             panel.titleVisibility = .hidden
             panel.titlebarAppearsTransparent = true
+            panel.titlebarSeparatorStyle = .none
+            panel.isMovable = true
+            panel.isMovableByWindowBackground = true
+            panel.isReleasedWhenClosed = false
+            panel.minSize = CopperWindowGeometry.minimumSize
+            panel.maxSize = CopperWindowGeometry.maximumSize(for: visibleFrame)
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.setFrameAutosaveName("CopperCompanionPanel")
-            panel.contentView = fixedHostingView(MainPanelView(store: store))
-            panel.center()
+            for button in [
+                NSWindow.ButtonType.closeButton,
+                .miniaturizeButton,
+                .zoomButton,
+            ] {
+                panel.standardWindowButton(button)?.isHidden = true
+            }
+            panel.setFrameAutosaveName(CopperWindowGeometry.autosaveName)
+            if !panel.setFrameUsingName(CopperWindowGeometry.autosaveName) {
+                panel.setFrame(CopperWindowGeometry.centeredFrame(in: visibleFrame), display: false)
+            }
+            panel.contentView = CopperPanelContentView(
+                hostingView: fixedHostingView(MainPanelView(store: store))
+            )
+            // Assigning the hosting view can reset AppKit's default size
+            // limits, so apply the explicit companion contract afterwards.
+            constrainProductionPanel(panel)
+            panel.delegate = self
             // Keep the production companion visible without stealing focus from
             // the app the user is working in.
             panel.orderFrontRegardless()
             self.panel = panel
+            // SwiftUI updates NSHostingView's intrinsic size on the next run
+            // loop and can restore AppKit's unconstrained defaults. Reapply the
+            // explicit companion limits after that layout pass.
+            DispatchQueue.main.async { [weak self, weak panel] in
+                guard let self, let panel else { return }
+                self.constrainProductionPanel(panel)
+            }
         }
 
         store.openEditor = { [weak self] noteID in
@@ -145,10 +196,93 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !backgroundUITest else { return false }
+        showCopper(activate: true)
+        return true
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard !backgroundUITest, let panel, !panel.isVisible || panel.isMiniaturized else { return }
+        showCopper(activate: false)
+    }
+
+    func applicationDidChangeScreenParameters(_ notification: Notification) {
+        guard let panel = panel as? CopperPanel else { return }
+        panelGeometryDidChange(panel, saveFrame: false)
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard let panel = notification.object as? CopperPanel else { return }
+        panelGeometryDidChange(panel, saveFrame: true)
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let panel = notification.object as? CopperPanel else { return }
+        panelGeometryDidChange(panel, saveFrame: true)
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard let panel = notification.object as? CopperPanel else { return }
+        panelGeometryDidChange(panel, saveFrame: false)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         captureMonitor?.stop()
         captureMonitor = nil
         preferencesCancellable = nil
+        if let observer = showPanelObserver {
+            NotificationCenter.default.removeObserver(observer)
+            showPanelObserver = nil
+        }
+        if let observer = hidePanelObserver {
+            NotificationCenter.default.removeObserver(observer)
+            hidePanelObserver = nil
+        }
+    }
+
+    private func showCopper(activate: Bool) {
+        guard !backgroundUITest, let panel = panel as? CopperPanel else { return }
+        if panel.isMiniaturized {
+            panel.deminiaturize(nil)
+        }
+        if activate {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func visibleFrame(for window: NSWindow?) -> NSRect {
+        guard let window else {
+            return (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+                ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        }
+        let referenceFrame = window.frame
+        let screen = NSScreen.screens.max { lhs, rhs in
+            intersectionArea(referenceFrame, lhs.frame) < intersectionArea(referenceFrame, rhs.frame)
+        }
+        if let screen, intersectionArea(referenceFrame, screen.frame) > 0 {
+            return screen.visibleFrame
+        }
+        return (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+    }
+
+    private func intersectionArea(_ lhs: NSRect, _ rhs: NSRect) -> CGFloat {
+        lhs.intersection(rhs).width * lhs.intersection(rhs).height
+    }
+
+    private func constrainProductionPanel(_ panel: CopperPanel) {
+        guard !backgroundUITest else { return }
+        _ = panel.applyCompanionConstraints(to: visibleFrame(for: panel))
+    }
+
+    private func panelGeometryDidChange(_ panel: CopperPanel, saveFrame: Bool) {
+        guard !backgroundUITest else { return }
+        constrainProductionPanel(panel)
+        if saveFrame {
+            panel.saveFrame(usingName: CopperWindowGeometry.autosaveName)
+        }
     }
 
     @discardableResult
@@ -284,6 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "bundleIdentifier": Bundle.main.bundleIdentifier ?? NSNull(),
             "bundlePath": Bundle.main.bundleURL.path,
             "executablePath": Bundle.main.executableURL?.path ?? NSNull(),
+            "activationPolicy": NSApp.activationPolicy().rawValue,
             "processIdentifier": ProcessInfo.processInfo.processIdentifier,
             "backgroundUITest": backgroundUITest,
             "keyboardMonitorsInstalled": captureMonitor != nil,
@@ -360,14 +495,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let report: [String: Any] = [
                 "backgroundUITest": self.backgroundUITest,
+                "activationPolicy": NSApp.activationPolicy().rawValue,
                 "applicationActive": NSApp.isActive,
                 "keyboardMonitorsInstalled": self.captureMonitor != nil,
                 "globalCaptureMonitorInstalled": self.captureMonitor != nil,
                 "localKeyboardMonitorInstalled": false,
                 "windowClass": String(describing: type(of: window)),
+                "styleMaskRawValue": Int64(window.styleMask.rawValue),
                 "windowLevel": window.level.rawValue,
                 "collectionBehaviorRawValue": Int64(window.collectionBehavior.rawValue),
                 "isFloatingPanel": (window as? NSPanel)?.isFloatingPanel ?? false,
+                "isMovable": window.isMovable,
+                "isMovableByWindowBackground": window.isMovableByWindowBackground,
+                "isResizable": window.isResizable,
+                "isMiniaturized": window.isMiniaturized,
+                "minimumSize": [
+                    "width": Double(window.minSize.width),
+                    "height": Double(window.minSize.height),
+                ],
+                "maximumSize": [
+                    "width": Double(window.maxSize.width),
+                    "height": Double(window.maxSize.height),
+                ],
+                "frameAutosaveName": window.frameAutosaveName,
+                "dragStripFrame": (window.contentView as? CopperPanelContentView).map { strip in
+                    [
+                        "x": Double(strip.diagnosticDragStripFrame.origin.x),
+                        "y": Double(strip.diagnosticDragStripFrame.origin.y),
+                        "width": Double(strip.diagnosticDragStripFrame.width),
+                        "height": Double(strip.diagnosticDragStripFrame.height),
+                    ]
+                } ?? NSNull(),
+                "dragHitTestClass": (window.contentView as? CopperPanelContentView).map { strip in
+                    String(describing: type(of: strip.hitTest(NSPoint(
+                        x: strip.bounds.midX,
+                        y: strip.bounds.maxY - 62
+                    )) ?? NSView()))
+                } ?? NSNull(),
+                "closeButtonHidden": window.standardWindowButton(.closeButton)?.isHidden ?? false,
+                "miniaturizeButtonHidden": window.standardWindowButton(.miniaturizeButton)?.isHidden ?? false,
+                "zoomButtonHidden": window.standardWindowButton(.zoomButton)?.isHidden ?? false,
                 "isKeyWindow": window.isKeyWindow,
                 "isVisible": window.isVisible,
                 "windowFrame": [
@@ -636,6 +803,11 @@ private extension NSPanel {
     }
 }
 
+extension Notification.Name {
+    static let copperShowPanel = Notification.Name("Copper.ShowPanel")
+    static let copperHidePanel = Notification.Name("Copper.HidePanel")
+}
+
 struct CopperCommands: Commands {
     @ObservedObject var store: CopperStore
 
@@ -672,6 +844,17 @@ struct CopperCommands: Commands {
         }
 
         CommandMenu("Copper") {
+            Button("Show Copper") {
+                NotificationCenter.default.post(name: .copperShowPanel, object: nil)
+            }
+            .keyboardShortcut("0", modifiers: [.command])
+
+            Button("Hide Copper") {
+                NotificationCenter.default.post(name: .copperHidePanel, object: nil)
+            }
+            .keyboardShortcut("w", modifiers: [.command])
+
+            Divider()
             commandButton(
                 "Toggle Done",
                 shortcut: store.preferences.markDoneShortcut

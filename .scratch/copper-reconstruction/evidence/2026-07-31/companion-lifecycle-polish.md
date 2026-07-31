@@ -1,0 +1,18 @@
+# Companion lifecycle Computer Use evidence
+
+The installed bundle `/Applications/Copper.app` was the only Copper process
+during this foreground pass.
+
+- `⌘W` hid the panel while the app process remained alive.
+- `⌘0` restored the panel.
+- `⌘M` minimised the panel; a second `⌘0` restored it.
+- Launch Services reopening the hidden bundle (`open -a /Applications/Copper.app`)
+  restored the same panel rather than creating a second one.
+- The AX tree retained Search, Options, sections, cards, composer and their
+  labels/actions after each restore.
+
+The Computer Use server hit-tested the dedicated `CopperDragStripView`, but its
+interior drag action delivered no final pointer delta in this session, so no
+`AXPosition` movement is claimed here. The production implementation keeps the
+native AppKit mouse path and autosaves the frame; a real physical pointer drag
+is the remaining manual confirmation for that interaction.

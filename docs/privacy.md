@@ -24,6 +24,10 @@ This document applies to the native personal reconstruction in this repository.
   and capture/cardinality metadata to a caller-supplied local path. They are
   opt-in command-line diagnostics used only with controlled fixtures; normal
   production launches do not enable them and do not log note content.
+- Production's regular activation policy, Dock icon and local frame autosave do
+  not add a network or analytics boundary. The supplied icon is copied into the
+  local bundle, and `Scripts/InstallApp.sh` only builds, signs, registers and
+  opens that local bundle; it does not contact a Copper service.
 
 ## Official website distinction
 

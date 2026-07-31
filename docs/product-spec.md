@@ -603,7 +603,7 @@ reposts events. Custom global shortcuts require Command plus another modifier,
 and Control-Option is rejected as the VoiceOver modifier. This reduces, but
 cannot eliminate, conflicts with shortcuts owned by third-party source apps.
 
-The formal Swift Testing suite is discovered and executed by SwiftPM (18/18).
+The formal Swift Testing suite is discovered and executed by SwiftPM (21/21).
 Current controlled background evidence covers real rich selections in TextEdit,
 Safari and Chrome. Every final report records exactly one new note, exactly one
 `Captured` toast, a preserved source selection, unchanged clipboard, inactive
@@ -640,3 +640,23 @@ not be exercised because the foreground session exposed only one display; this
 is an external hardware/session limitation. Visual matching remains an
 evidence-based approximation; neither pixel-perfect nor hidden one-to-one
 parity is claimed.
+
+## 18. Companion shell polish (2026-07-31)
+
+The reconstruction now uses a hybrid macOS shell: production is a regular app
+with a Dock/Command-Tab identity, while the visible companion remains a
+floating, nonactivating `NSPanel` at floating level with all-Spaces and
+full-screen auxiliary collection behaviour. The three standard traffic lights
+are hidden, but the native titled/resizable/closable/miniaturizable style is
+retained. The first-launch frame is `430×760`, the minimum is `320×420`, the
+maximum width is `620`, and saved frames are clamped to the visible screen.
+`⌘W` hides the panel while keeping capture alive, `⌘M` minimises it, and
+`⌘0`/Dock reopen it. These shell improvements are implementation choices for
+the personal reconstruction; the public evidence does not determine whether
+the original Copper supports the same resize or lifecycle details.
+
+The supplied icon artwork is preserved as
+`Resources/AppIcon-source.png` and deterministically converted to a native
+`.icns` resource during `Scripts/BuildApp.sh`. `Scripts/InstallApp.sh` validates
+the signed bundle, keeps a prior `/Applications/Copper.app` in Trash with a
+timestamp, registers the new bundle with Launch Services and opens it.

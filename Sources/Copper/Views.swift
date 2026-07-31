@@ -47,6 +47,93 @@ struct VisualEffectBackground: NSViewRepresentable {
     }
 }
 
+final class CopperDragStripView: NSView {
+    private var dragStartMouseLocation: NSPoint?
+    private var dragStartWindowOrigin: NSPoint?
+
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
+        dragStartMouseLocation = NSEvent.mouseLocation
+        dragStartWindowOrigin = window.frame.origin
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        moveWindow(to: NSEvent.mouseLocation)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if let window, dragStartMouseLocation != nil, dragStartWindowOrigin != nil {
+            // Computer Use and some AppKit event paths can deliver the final
+            // pointer position without an intermediate mouseDragged event.
+            // Apply the accumulated delta on mouse-up as a safe native fallback.
+            moveWindow(to: NSEvent.mouseLocation)
+            window.saveFrame(usingName: CopperWindowGeometry.autosaveName)
+        }
+        dragStartMouseLocation = nil
+        dragStartWindowOrigin = nil
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    private func moveWindow(to currentMouseLocation: NSPoint) {
+        guard let window, let dragStartMouseLocation, let dragStartWindowOrigin else { return }
+        window.setFrameOrigin(NSPoint(
+            x: dragStartWindowOrigin.x + currentMouseLocation.x - dragStartMouseLocation.x,
+            y: dragStartWindowOrigin.y + currentMouseLocation.y - dragStartMouseLocation.y
+        ))
+    }
+
+    override var isOpaque: Bool { false }
+}
+
+/// AppKit wrapper used by the production panel. Keeping the transparent drag
+/// strip outside NSHostingView avoids SwiftUI hit-testing differences between
+/// a nonactivating panel and a regular window.
+@MainActor
+final class CopperPanelContentView: NSView {
+    private let hostingView: NSView
+    private let dragStrip = CopperDragStripView()
+
+    init(hostingView: NSView) {
+        self.hostingView = hostingView
+        super.init(frame: .zero)
+        wantsLayer = true
+        hostingView.autoresizingMask = [.width, .height]
+        dragStrip.autoresizingMask = [.width, .minYMargin]
+        dragStrip.wantsLayer = true
+        dragStrip.layer?.backgroundColor = NSColor.clear.cgColor
+        addSubview(hostingView)
+        addSubview(dragStrip)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    var diagnosticDragStripFrame: NSRect { dragStrip.frame }
+
+    override func layout() {
+        super.layout()
+        hostingView.frame = bounds
+        dragStrip.frame = NSRect(
+            x: bounds.minX,
+            y: bounds.maxY - 66,
+            width: bounds.width,
+            height: 8
+        )
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if dragStrip.frame.contains(point) {
+            return dragStrip
+        }
+        return super.hitTest(point)
+    }
+}
+
 struct MainPanelView: View {
     @ObservedObject var store: CopperStore
     @State private var newSectionTitle = ""
@@ -97,7 +184,7 @@ struct MainPanelView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
-        .frame(minWidth: 360, idealWidth: 430, maxWidth: 500, minHeight: 560, idealHeight: 760)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 28, style: .continuous)

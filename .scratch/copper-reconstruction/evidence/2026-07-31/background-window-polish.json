@@ -1,0 +1,52 @@
+{
+  "activationPolicy" : 1,
+  "applicationActive" : false,
+  "backgroundUITest" : true,
+  "closeButtonHidden" : false,
+  "collectionBehaviorRawValue" : 0,
+  "dragHitTestClass" : null,
+  "dragStripFrame" : null,
+  "forcedAccessibilityScale" : false,
+  "forcedDifferentiateWithoutColor" : false,
+  "forcedHighContrast" : false,
+  "forcedReduceMotion" : false,
+  "frameAutosaveName" : "CopperBackgroundUITestWindow",
+  "globalCaptureMonitorInstalled" : false,
+  "isFloatingPanel" : false,
+  "isKeyWindow" : false,
+  "isMiniaturized" : false,
+  "isMovable" : true,
+  "isMovableByWindowBackground" : false,
+  "isResizable" : true,
+  "isVisible" : true,
+  "keyboardMonitorsInstalled" : false,
+  "localKeyboardMonitorInstalled" : false,
+  "maximumSize" : {
+    "height" : 1.7976931348623157e+308,
+    "width" : 1.7976931348623157e+308
+  },
+  "miniaturizeButtonHidden" : false,
+  "minimumSize" : {
+    "height" : 32,
+    "width" : 0
+  },
+  "screenCount" : 1,
+  "screens" : [
+    {
+      "height" : 967,
+      "width" : 1496,
+      "x" : 0,
+      "y" : 0
+    }
+  ],
+  "styleMaskRawValue" : 15,
+  "windowClass" : "NSWindow",
+  "windowFrame" : {
+    "height" : 792,
+    "width" : 430,
+    "x" : 533,
+    "y" : 109
+  },
+  "windowLevel" : 0,
+  "zoomButtonHidden" : false
+}

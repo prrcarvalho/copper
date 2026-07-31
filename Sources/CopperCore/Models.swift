@@ -3,13 +3,92 @@ import ApplicationServices
 import Combine
 import Foundation
 
-/// Borderless nonactivating panels do not accept text input unless they can
-/// become key. Copper stays an accessory app and this panel never becomes the
-/// main window, but focused controls can receive the user's keyboard normally.
+/// Shared geometry for the production companion panel.
+///
+/// The public Copper evidence only establishes a compact floating companion
+/// window; these values are deliberately kept as explicit reconstruction
+/// parameters rather than presented as hidden implementation facts.
+public enum CopperWindowGeometry {
+    public static let autosaveName = "CopperCompanionPanel"
+    public static let minimumSize = NSSize(width: 320, height: 420)
+    public static let initialSize = NSSize(width: 430, height: 760)
+    public static let maximumWidth: CGFloat = 620
+
+    public static func maximumSize(for visibleFrame: NSRect) -> NSSize {
+        NSSize(
+            width: max(minimumSize.width, min(maximumWidth, visibleFrame.width - 16)),
+            height: max(minimumSize.height, visibleFrame.height - 24)
+        )
+    }
+
+    public static func centeredFrame(size: NSSize = initialSize, in visibleFrame: NSRect) -> NSRect {
+        let maximum = maximumSize(for: visibleFrame)
+        let width = min(max(size.width, minimumSize.width), maximum.width)
+        let height = min(max(size.height, minimumSize.height), maximum.height)
+        return NSRect(
+            x: visibleFrame.midX - width / 2,
+            y: visibleFrame.midY - height / 2,
+            width: width,
+            height: height
+        )
+    }
+
+    public static func clampedFrame(_ frame: NSRect, to visibleFrame: NSRect) -> NSRect {
+        let maximum = maximumSize(for: visibleFrame)
+        let width = min(max(frame.width, minimumSize.width), maximum.width)
+        let height = min(max(frame.height, minimumSize.height), maximum.height)
+        let x = min(
+            max(frame.minX, visibleFrame.minX),
+            visibleFrame.maxX - width
+        )
+        let y = min(
+            max(frame.minY, visibleFrame.minY),
+            visibleFrame.maxY - height
+        )
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+}
+
+/// A titled, nonactivating panel can still accept keyboard focus for its text
+/// fields without becoming the application's main window. The standard
+/// buttons are hidden by the production shell, while the native style remains
+/// available for edge resizing and the standard Command-W/Command-M actions.
 @MainActor
 public final class CopperPanel: NSPanel {
+    public static let companionStyleMask: NSWindow.StyleMask = [
+        .titled,
+        .fullSizeContentView,
+        .nonactivatingPanel,
+        .resizable,
+        .closable,
+        .miniaturizable,
+    ]
+
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { false }
+
+    /// Applies the shared companion geometry contract after AppKit/SwiftUI
+    /// layout passes. Returning whether the frame changed keeps the shell's
+    /// delegate callbacks small and makes clamping behaviour testable.
+    @discardableResult
+    public func applyCompanionConstraints(to visibleFrame: NSRect) -> Bool {
+        let maximum = CopperWindowGeometry.maximumSize(for: visibleFrame)
+        contentMinSize = CopperWindowGeometry.minimumSize
+        contentMaxSize = maximum
+        minSize = CopperWindowGeometry.minimumSize
+        maxSize = maximum
+        let clamped = CopperWindowGeometry.clampedFrame(frame, to: visibleFrame)
+        guard clamped != frame else { return false }
+        setFrame(clamped, display: true)
+        return true
+    }
+
+    /// Copper's close command hides the companion but deliberately keeps the
+    /// global capture monitor alive. Dock/Command-Tab/Command-0 can present it
+    /// again without creating a second panel.
+    public override func performClose(_ sender: Any?) {
+        orderOut(sender)
+    }
 }
 
 public struct CopperSection: Codable, Hashable, Identifiable {

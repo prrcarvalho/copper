@@ -17,7 +17,16 @@ Copy them back into the active AI workflow and mark them done
 
 The native macOS reconstruction is implemented as a Swift Package executable.
 The app is local-first and runs from a floating companion panel; the tested
-bundle is built at `.build/Copper.app`.
+bundle is built at `.build/Copper.app` and can be installed at
+`/Applications/Copper.app`.
+
+Production uses a regular macOS activation policy so Copper has a Dock icon and
+appears in Command-Tab, while the visible companion remains a floating,
+nonactivating `NSPanel` during capture. Its native shell is draggable and
+resizable (`320×420` minimum, `430×760` first-launch size, `620` maximum width)
+and restores its frame between launches. The standard traffic lights remain
+hidden to match the public reference; `⌘W`, `⌘M` and `⌘0` hide, minimise and
+restore the panel.
 
 ## Product scope
 
@@ -72,12 +81,17 @@ native macOS app. See
 │   └── Views.swift
 ├── Sources/CopperCore/
 │   └── Models.swift
+├── Resources/
+│   ├── AppIcon-source.png
+│   └── Info.plist
 ├── Tests/CopperTests/
 │   └── CopperTests.swift
 ├── Scripts/
 │   ├── AccessibilityTrustDiagnostic.sh
 │   ├── BuildApp.sh
 │   ├── CopperSmoke.swift
+│   ├── GenerateAppIcon.swift
+│   ├── InstallApp.sh
 │   ├── LaunchBackgroundUITest.sh
 │   └── StopBackgroundUITest.sh
 ├── .opensrc/
@@ -111,6 +125,18 @@ agent caches and are not committed.
 Scripts/BuildApp.sh
 open .build/Copper.app
 ```
+
+To install the signed personal bundle, with Copper closed:
+
+```bash
+Scripts/InstallApp.sh
+```
+
+The installer builds and validates the exact bundle, keeps any previous
+`/Applications/Copper.app` in the user's Trash with a timestamp, registers the
+new bundle with Launch Services, and opens it. It does not create a Developer
+ID signature or notarise the app; those are distribution requirements for other
+Macs, not this local reconstruction.
 
 ### Background UI-test mode
 
@@ -191,8 +217,8 @@ swift test list
 swift test
 ```
 
-It currently executes 18 domain, persistence, formatting, ordering, capture
-cardinality and keyboard-monitor regression cases. The matching upstream Swift
+It currently executes 21 domain, persistence, formatting, ordering, capture
+cardinality, keyboard-monitor and native-window-shell regression cases. The matching upstream Swift
 Testing 6.3.3 revision is pinned
 as a test-only dependency because this Command Line Tools installation's
 prebuilt `Testing.framework` compiles macros but enumerates zero test records.
