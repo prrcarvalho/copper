@@ -632,10 +632,10 @@ completion, Merge, Move, Expand, Return, Command-Return, full Tab traversal,
 separate editor window and relaunch persistence. The production panel remained
 visible in a real TextEdit full-screen Space.
 
-The following criteria remain unproved rather than failed: a current isolated
-Electron/plain-only fallback repetition; spoken VoiceOver announcements; an
-actual cross-Space transition; and production multi-monitor movement during the
-foreground block, where only one display was exposed. These items remain
-`PARTIAL` or `BLOCKED` in `docs/ux-verification.md`. Visual matching remains an
+The current Electron/plain runtime is covered by a real VS Code Untitled editor
+capture. The remaining unproved criteria are spoken VoiceOver announcements
+and an actual cross-Space transition. Production multi-monitor movement could
+not be exercised because the foreground session exposed only one display;
+this is an external hardware/session limitation. Visual matching remains an
 evidence-based approximation; neither pixel-perfect nor hidden one-to-one
 parity is claimed.

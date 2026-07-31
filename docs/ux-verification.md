@@ -103,7 +103,7 @@ report records that limitation.
 | Search, sections and successive composer notes | Foreground Search filtered to the TOML card; a section was created by its native sheet and became active; the fixed key-capable production panel accepted Composer text + Return and created one note | **PASS (foreground runtime)** |
 | Space and Command-Space | A focused production card changed to selected/completed with Space; Command-Space deselected it without changing completion and selected it again | **PASS (foreground runtime)** |
 | Capture shortcut, conflict validation and reset | Settings rejected an unmodified key, a Copper conflict and Control-Option; Reset restored double Shift; physical default and `Command-Control-Shift-C` gestures both captured successfully | **PASS for the two controlled production gestures; unknown third-party shortcut conflicts remain possible** |
-| Rich conversion and plain fallback | Real TextEdit bold/italic, Safari marker-attributed bold and Chrome AX bold converted to Markdown; plain fallback passes formally | **PARTIAL — rich runtime PASS; current plain-only application route not repeated** |
+| Rich conversion and plain fallback | Real TextEdit bold/italic, Safari marker-attributed bold and Chrome AX bold converted to Markdown; real VS Code Electron plain selection captured through the supported AX path; plain fallback also passes formally | **PASS for supported rich/plain runtime paths; fallback when AX exposes no attributed text remains formal-only** |
 | Capture cardinality, selection, clipboard and Copper activation | Background TextEdit/Safari/Chrome plus physical production default/custom TextEdit runs record one note and toast per gesture, preserved selection/clipboard, inactive Copper and unchanged active source app | **PASS (background and production runtime)** |
 | Capture toast position/nonactivation | TextEdit, Safari and fixed Chrome reports contain non-empty selection bounds; the 128 × 38 toast starts 12 points below the selection in top-left screen coordinates, is visible and never key | **PASS (background diagnostic route)** |
 | Copy, Copy as List, completion, Merge and Move | In the final exact bundle, focused `Command-C` copied one selected card without completing it and exposed one `Copied` toast; focused `Shift-Command-C` emitted two notes in visual order as a numbered list, completed both and exposed one `Copied as List` toast. Settings then persisted custom Copy `Command-Shift-K`, which copied once; real Search-field selections still used native `Command-C` before and after customisation. Merge and Move also ran in the visible UI | **PASS (foreground runtime)** |
@@ -114,7 +114,7 @@ report records that limitation.
 | TextEdit runtime | Real selection captured `Copper **Rich Bold** and *italic* fallback fixture 2026-07-31` | **PASS (rich diagnostic route)** |
 | Safari runtime | Real `Example Domain` selection captured as `**Example Domain**` through `attributedTextMarker` | **PASS (rich diagnostic route)** |
 | Chrome runtime | Temporary `example.com` tab exposed `attributedRange`; after AX font/bounds fixes it captured `**Example Domain**` with real selection bounds | **PASS (rich diagnostic route)** |
-| Electron/plain runtime | A new isolated VS Code process could not be addressed independently by Computer Use while the user's VS Code instance shared the bundle identifier; no user document was touched | **BLOCKED — current plain fallback/Electron repetition needs foreground coordination** |
+| Electron/plain runtime | Real VS Code Electron Untitled editor selection captured exactly one plain note and one `Captured` toast; clipboard and selection were preserved, Copper stayed inactive/non-key and background monitors were zero | **PASS (runtime); no-AX-attributed-text branch remains formal-only** |
 | Spaces/full-screen/multiple monitors | Background mode was observed on display 2 of 2; production is a floating `CopperPanel`/`NSPanel`, level 3, behaviour 257, and remained visible/AX-addressable in TextEdit full-screen | **PARTIAL — production full-screen PASS; the foreground run exposed one display and cross-Space visibility received no physical confirmation** |
 | Visual one-to-one parity | Supplied frames support an approximation of hierarchy, not hidden/internal behaviour | **APPROXIMATION** |
 
@@ -158,11 +158,15 @@ matching note, an unchanged clipboard, a preserved real selection,
 frontmost app before/after and a visible non-key toast. Because the source apps
 were deliberately addressed by bundle identifier while another app remained
 frontmost, these reports prove that Copper did not activate or disturb the
-current frontmost app. The temporary Chrome tab was closed. The attempt to
-repeat an isolated VS Code/plain-selection route was stopped because Computer
-Use resolved the user's existing VS Code process for the shared bundle ID; no
-user document was modified. A prior repository statement of Electron success
-is therefore not treated as current-round evidence.
+current frontmost app. The temporary Chrome tab was closed. The Electron/plain
+route was then completed in a real Untitled editor in the existing VS Code
+Electron process. Screen Reader Optimized Mode exposed the editor text to AX;
+the selected plain fixture remained selected after capture. The evidence
+recorded exactly one matching note, one `Captured` toast,
+`applicationActive=false`, `keyboardMonitorsInstalled=false`, unchanged
+clipboard and a non-key toast. No user document was touched. The no-AX-
+attributed-text fallback remains covered by the formal converter test rather
+than being claimed as a separate runtime condition.
 
 The authorised production block then exercised the exact signed floating
 panel. Two physically repeated default double-Shift gestures were intentional,

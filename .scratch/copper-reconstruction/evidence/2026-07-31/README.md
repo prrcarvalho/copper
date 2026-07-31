@@ -13,6 +13,9 @@ kept rather than rewritten as a success.
   Markdown note and one toast with valid selection bounds.
 - `chrome-capture-fixed.json` — repeated Chrome run after AX font and zero-bounds
   fixes; bold Markdown plus valid selection-relative toast placement.
+- `electron-plain-capture-current.json` — real VS Code Electron Untitled
+  selection with plain content; exactly one note and toast, unchanged
+  clipboard, preserved selection, inactive Copper and zero monitors.
 - `background-main-current.jpeg` and `background-window-current.json` — current
   safe background `NSWindow`, current visual hierarchy and AX semantics.
 - `background-accessibility-current.jpeg` and

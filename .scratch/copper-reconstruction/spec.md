@@ -54,11 +54,11 @@ hidden behaviour.
 - Runtime evidence and its limits are recorded only in
   `docs/ux-verification.md`.
 - Real rich-text selections have controlled runtime evidence in TextEdit,
-  Safari and Chrome. Every current capture report records one note, one capture
+  Safari, Chrome and a real VS Code Electron editor. Every current capture report records one note, one capture
   toast, an unchanged clipboard, a preserved source selection, an inactive
   Copper app and zero keyboard monitors in the background route. The plain AX
-  fallback is model-tested but still needs a current Electron/plain-selection
-  runtime repetition.
+  fallback remains model-tested; the Electron runtime now confirms the plain
+  source path when AX exposes no formatting traits.
 - Selection-relative toast placement was repeated after the AX-bounds fix in
   TextEdit, Safari and Chrome. The authorised foreground block proved the
   default and safe custom physical gestures, Settings validation/reset,
@@ -68,8 +68,7 @@ hidden behaviour.
   action flows, relaunch persistence and a real full-screen Space. Spoken
   VoiceOver and an actual cross-Space transition were requested but not
   physically confirmed.
-  A current isolated Electron/plain-only runtime repetition also remains
-  unavailable because Computer Use resolves the user's existing VS Code process
-  for the shared bundle identifier.
+  The current Electron run used a real Untitled editor in the existing VS Code
+  process; no user document was touched.
 - Visual matching is an evidence-based approximation, not a claim of pixel- or
   hidden-behaviour parity.
