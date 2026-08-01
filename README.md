@@ -4,8 +4,8 @@
   <img src="Resources/AppIcon-source.png" alt="Copper app icon" width="180">
 </p>
 
-A private, local-first reconstruction of Copper's observable macOS experience
-for personal use.
+An unofficial, local-first open-source reconstruction of Copper's observable
+macOS experience. It is not affiliated with or endorsed by Copper's creators.
 
 Copper's core product loop is:
 
@@ -113,8 +113,9 @@ agent caches and are not committed.
 - Do not claim access to Copper's private source code or internal APIs.
 - Do not vendor proprietary branding, marketing assets or purchased binaries.
 - Keep user notes on-device and avoid telemetry or note-content logging.
-- This repository has no open-source licence; it is intended for private,
-  personal use.
+- This project is released under the [MIT License](LICENSE).
+- Copper is a trademark of its respective owner; this project is an
+  independent reconstruction and does not include Copper's private source.
 
 ## Prerequisites for implementation
 
