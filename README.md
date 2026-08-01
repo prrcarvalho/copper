@@ -1,5 +1,9 @@
 # Copper Reconstruction
 
+<p align="center">
+  <img src="Resources/AppIcon-source.png" alt="Copper app icon" width="180">
+</p>
+
 A private, local-first reconstruction of Copper's observable macOS experience
 for personal use.
 
