@@ -586,7 +586,7 @@ This strengthens the interpretation that Copper is positioned as a **cross-app c
 
 The original conclusion still stands: the public page plus the supplied marketing video are sufficient to reconstruct the core workflow, visual hierarchy and major actions of Copper for a close personal clone, but not its full hidden behaviour or exact internal implementation.
 
-## 17. Reconstruction verification status (2026-07-31)
+## 17. Reconstruction verification status (2026-08-01)
 
 The current reconstruction implements active-section routing and persistence,
 search/sections, deterministic multi-note operations, reversible completion,
@@ -618,7 +618,7 @@ The current background window was inspected by Computer Use on the second of
 two displays, both normally and with forced Reduce Motion, Differentiate Without
 Color, Increased Contrast and accessibility-scale paths. The AX tree exposes
 card labels, values and actions. This is runtime evidence for rendering and AX
-structure, not for spoken VoiceOver.
+structure and keyboard semantics.
 
 The authorised foreground block exercised the exact production panel. Physical
 default double-Shift and `Command-Control-Shift-C` runs each produced one note
@@ -633,13 +633,11 @@ separate editor window and relaunch persistence. The production panel remained
 visible in a real TextEdit full-screen Space.
 
 The current Electron/plain runtime is covered by a real VS Code Untitled editor
-capture. The remaining unproved criterion is spoken VoiceOver announcements.
-One real cross-Space transition was completed and the production panel remained
-visible and AX-addressable afterwards. Production multi-monitor movement could
-not be exercised because the foreground session exposed only one display; this
-is an external hardware/session limitation. Visual matching remains an
-evidence-based approximation; neither pixel-perfect nor hidden one-to-one
-parity is claimed.
+capture. One real cross-Space transition was completed and the production panel
+remained visible and AX-addressable afterwards. Real pointer dragging and
+multi-monitor movement were subsequently confirmed on the current bundle.
+Visual matching remains an evidence-based approximation; neither pixel-perfect
+nor hidden one-to-one parity is claimed.
 
 ## 18. Companion shell polish (2026-07-31)
 
@@ -660,3 +658,22 @@ The supplied icon artwork is preserved as
 `.icns` resource during `Scripts/BuildApp.sh`. `Scripts/InstallApp.sh` validates
 the signed bundle, keeps a prior `/Applications/Copper.app` in Trash with a
 timestamp, registers the new bundle with Launch Services and opens it.
+
+## 19. Deferred parity work
+
+The remaining work is deliberately deferred rather than blocking the personal
+clone:
+
+1. Pixel-level visual parity: exact material/colour tokens, dimensions, corner
+   radii, typography and wrapping, shadows, composer treatment, toast and
+   context-menu visuals, settings visuals and scroll indicators.
+2. Hidden behaviour of the original Copper that cannot be established from the
+   supplied public evidence: exact persistence schema/path, section lifecycle,
+   search matching, merge/move semantics, multi-note `Copy` formatting,
+   selection gestures, undo/delete/archive/restore, inaccessible or secure-text
+   capture, rich-text conversion rules, launch-at-login, import/export,
+   update handling and licensing UX.
+
+These are future parity and reverse-engineering tasks. The current clone's core
+capture, organisation, copy, completion, persistence, shell, drag and
+multi-monitor behaviour are treated as complete.

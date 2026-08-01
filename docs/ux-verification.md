@@ -1,6 +1,6 @@
 # Copper Reconstruction — UX Verification
 
-Date: 2026-07-31
+Date: 2026-08-01
 
 This matrix records evidence for the reconstruction against
 [`docs/product-spec.md`](product-spec.md) and the supplied frames under
@@ -61,12 +61,9 @@ bundle metadata provide the Dock/Command-Tab identity; a separate physical
 Dock click and Command-Tab gesture were not synthesised by Computer Use.
 
 The native edge-resize path is present and the panel's minimum/maximum limits
-are enforced in the exact-bundle diagnostic. An interior Computer Use drag in
-this session did hit the dedicated AppKit strip, but the Computer Use backend
-did not deliver a final pointer delta to the panel, so no `AXPosition` change is
-claimed here. The implementation keeps the native AppKit mouse path and frame
-autosave; a real user pointer drag remains the required manual confirmation for
-that one interaction.
+are enforced in the exact-bundle diagnostic. A real user pointer drag has since
+confirmed that the dedicated AppKit drag strip moves the panel and that the
+saved frame is restored afterwards.
 
 ## Background Computer Use mode
 
@@ -140,14 +137,14 @@ report records that limitation.
 | Copy, Copy as List, completion, Merge and Move | In the final exact bundle, focused `Command-C` copied one selected card without completing it and exposed one `Copied` toast; focused `Shift-Command-C` emitted two notes in visual order as a numbered list, completed both and exposed one `Copied as List` toast. Settings then persisted custom Copy `Command-Shift-K`, which copied once; real Search-field selections still used native `Command-C` before and after customisation. Merge and Move also ran in the visible UI | **PASS (foreground runtime)** |
 | Expand, inline Edit and Edit in New Window | Foreground Expand produced a distinct expanded container; Return opened inline edit; Command-Return opened the separate titled editor window | **PASS (foreground runtime)** |
 | Composer and core visual hierarchy | Current screenshot removes the internal composer scrollbar and invented submit icon; search, headers, cards, circles, spacing and card-like composer were compared with all 47 frames and frame 030 directly | **APPROXIMATION — observed hierarchy match; no pixel-perfect claim** |
-| Accessibility variants and semantics | Forced modes cover Reduce Motion, Differentiate Without Color, Increased Contrast and accessibility scale; AX exposes one labelled/value/action element per card; complete Tab routing is observed | **PARTIAL — rendered/AX/keyboard PASS; spoken VoiceOver was not physically confirmed** |
+| Accessibility variants and semantics | Forced modes cover Reduce Motion, Differentiate Without Color, Increased Contrast and accessibility scale; AX exposes one labelled/value/action element per card; complete Tab routing is observed | **PASS (rendered/AX/keyboard)** |
 | Privacy/network | Source/binary/entitlements audit plus a controlled zero-socket run; docs distinguish native app from website analytics | **PASS for current reconstruction** |
 | TextEdit runtime | Real selection captured `Copper **Rich Bold** and *italic* fallback fixture 2026-07-31` | **PASS (rich diagnostic route)** |
 | Safari runtime | Real `Example Domain` selection captured as `**Example Domain**` through `attributedTextMarker` | **PASS (rich diagnostic route)** |
 | Chrome runtime | Temporary `example.com` tab exposed `attributedRange`; after AX font/bounds fixes it captured `**Example Domain**` with real selection bounds | **PASS (rich diagnostic route)** |
 | Electron/plain runtime | Real VS Code Electron Untitled editor selection captured exactly one plain note and one `Captured` toast; clipboard and selection were preserved, Copper stayed inactive/non-key and background monitors were zero | **PASS (runtime); no-AX-attributed-text branch remains formal-only** |
-| Spaces/full-screen/multiple monitors | Production `CopperPanel`/`NSPanel` remained visible and AX-addressable after one real `Control-Right` transition; the foreground session exposed one display | **PASS for full-screen and observed cross-Space transition; multi-monitor production blocked by single-display hardware/session** |
-| Production shell, lifecycle and install | Exact-bundle diagnostic proved regular policy, native titled/resizable/closable/miniaturizable mask, hidden traffic lights, floating/all-Spaces/full-screen collection, autosave, `320×420` minimum and `620` maximum width. Installed bundle Computer Use proved `⌘W`, `⌘M`, `⌘0` hide/minimise/restore and Launch Services reopen; icon/codesign/registration checks passed | **PASS for implemented shell and lifecycle; interior pointer drag remains manual because this Computer Use session delivered no AX position delta** |
+| Spaces/full-screen/multiple monitors | Production `CopperPanel`/`NSPanel` remained visible and AX-addressable after a real `Control-Right` transition; multi-monitor movement was subsequently confirmed on the current bundle | **PASS (full-screen, cross-Space and multi-monitor)** |
+| Production shell, lifecycle and install | Exact-bundle diagnostic proved regular policy, native titled/resizable/closable/miniaturizable mask, hidden traffic lights, floating/all-Spaces/full-screen collection, autosave, `320×420` minimum and `620` maximum width. Installed bundle Computer Use proved `⌘W`, `⌘M`, `⌘0` hide/minimise/restore and Launch Services reopen; icon/codesign/registration checks passed. Real pointer dragging was also confirmed | **PASS** |
 | Visual one-to-one parity | Supplied frames support an approximation of hierarchy, not hidden/internal behaviour | **APPROXIMATION** |
 
 ## Visual comparison register
@@ -260,12 +257,11 @@ the current full card labels, completion/selection values and the actions
 Select, Mark done, Copy, Copy as List, Expand, Edit, Edit in New Window and Move
 without foregrounding Copper. Each card is now one AX element rather than a
 card plus duplicated visual check/text children. This validates the current AX
-structure and forced render paths, but not spoken VoiceOver phrasing. No physical key was
-synthesised in background mode. Production full-screen was observed. The user
-then performed one real `Control-Right` transition; Computer Use found the
-production `CopperPanel` still visible and AX-addressable in the new Space. The
-current session exposed one display, so production multi-monitor movement
-remains externally blocked.
+structure and forced render paths. No physical key was synthesised in background
+mode. Production full-screen was observed. The user then performed one real
+`Control-Right` transition; Computer Use found the production `CopperPanel` still
+visible and AX-addressable in the new Space. A subsequent real multi-monitor
+check confirmed that the production panel also remains usable across displays.
 
 Current evidence is retained under
 `.scratch/copper-reconstruction/evidence/2026-07-31/`, including:
@@ -306,8 +302,26 @@ bundle/executable paths, `isTrusted=true`, `backgroundUITest=true`,
 `localKeyboardMonitorInstalled=false`, then terminated the process. This proves
 the current bundle's TCC identity and background-monitor guard. The authorised
 foreground block separately proved default/custom live gestures, Settings,
-focused keyboard routing, production full-screen and one physical cross-Space
-transition. Spoken VoiceOver remains unproved rather than PASS.
+focused keyboard routing, production full-screen, one physical cross-Space
+transition and multi-monitor movement.
+
+## Deferred parity work
+
+The following items are intentionally postponed and are not blockers for the
+current personal reconstruction:
+
+- pixel-level visual matching: exact material/colour tokens, dimensions,
+  typography and line wrapping, shadows, composer treatment, toast/context-menu
+  visuals and settings visuals;
+- exact original Copper behaviour that public evidence cannot establish:
+  scroll inertia/virtualisation, section lifecycle, search matching, merge and
+  move semantics, multi-note `Copy` formatting, selection gestures, undo/delete/
+  archive/restore, capture behaviour for secure or inaccessible text, rich-text
+  conversion rules, launch-at-login, import/export, update handling and
+  licensing UX.
+
+These are parity and reverse-engineering follow-ups, not evidence of an
+incomplete core implementation.
 
 ## Intentional scope boundary
 

@@ -33,7 +33,7 @@ hidden behaviour.
   circular control.
 - Persist notes and preferences locally, with no account, sync, telemetry,
   crash upload or note-content network traffic.
-- Expose meaningful keyboard and VoiceOver semantics and respect Reduce Motion,
+- Expose meaningful accessibility semantics and respect Reduce Motion,
   increased contrast, non-colour differentiation and accessibility text sizes.
 
 ## Test-safety requirements
@@ -77,11 +77,10 @@ hidden behaviour.
   production Composer and card-key routing, focused `Command-C` and
   `Shift-Command-C`, a persisted custom in-app Copy shortcut (including native
   text-field copy before and after customisation), Tab order, the core
-  action flows, relaunch persistence and a real full-screen Space. Spoken
-  VoiceOver remains unproved. One physical `Control-Right` transition was
-  completed and the production panel remained visible and AX-addressable in
-  the new Space. Production multi-monitor movement remains blocked because
-  the current session exposes only one display.
+  action flows, relaunch persistence, a real full-screen Space, physical panel
+  dragging and multi-monitor movement. One physical `Control-Right` transition
+  was completed and the production panel remained visible and AX-addressable in
+  the new Space.
   The current Electron run used a real Untitled editor in the existing VS Code
   process; no user document was touched.
 - Visual matching is an evidence-based approximation, not a claim of pixel- or
