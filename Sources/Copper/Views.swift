@@ -14,6 +14,14 @@ private struct CopperForceHighContrastKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private enum CopperLayout {
+    static let bodyFontSize: CGFloat = 14
+    static let sectionFontSize: CGFloat = 10
+    static let toolbarControlSize: CGFloat = 32
+    static let cardControlSize: CGFloat = 20
+    static let cardPadding: CGFloat = 12
+}
+
 extension EnvironmentValues {
     var copperForceReduceMotion: Bool {
         get { self[CopperForceReduceMotionKey.self] }
@@ -153,7 +161,6 @@ struct MainPanelView: View {
 
             VStack(spacing: 0) {
                 toolbar
-                Divider().opacity(0.35)
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 22) {
@@ -174,7 +181,6 @@ struct MainPanelView: View {
                 }
                 .scrollIndicators(.hidden)
 
-                Divider().opacity(0.35)
                 composer
             }
 
@@ -210,15 +216,16 @@ struct MainPanelView: View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
+                    .font(.system(size: CopperLayout.bodyFontSize, relativeTo: .body))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 TextField("Search", text: $store.searchText)
                     .textFieldStyle(.plain)
-                    .font(.body)
+                    .font(.system(size: CopperLayout.bodyFontSize, relativeTo: .body))
                     .accessibilityLabel("Search notes")
             }
             .padding(.horizontal, 13)
-            .frame(height: 38)
+            .frame(height: CopperLayout.toolbarControlSize)
             .background(Color.white.opacity(0.56), in: Capsule())
 
             Menu {
@@ -229,11 +236,13 @@ struct MainPanelView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 38, height: 38)
-                    .background(Color.white.opacity(0.56), in: Circle())
-                    .contentShape(Circle())
+                    .foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: CopperLayout.toolbarControlSize, height: CopperLayout.toolbarControlSize)
+            .background(Circle().fill(Color.white.opacity(0.62)))
+            .contentShape(Circle())
             .focusable(true)
             .accessibilityLabel("Options")
         }
@@ -248,8 +257,10 @@ struct MainPanelView: View {
             } label: {
                 HStack(spacing: 10) {
                     Text(section.title.uppercased())
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: CopperLayout.sectionFontSize, weight: .semibold, relativeTo: .caption))
                         .tracking(1.15)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .foregroundStyle(.secondary)
                     Rectangle()
                         .fill(Color.primary.opacity(store.activeSectionID == section.id ? 0.25 : 0.13))
@@ -257,6 +268,7 @@ struct MainPanelView: View {
                 }
             }
             .buttonStyle(.plain)
+            .padding(.horizontal, 10)
             .focusable(true)
             .accessibilityAddTraits(.isHeader)
             .accessibilityLabel("Section \(section.title)")
@@ -272,12 +284,12 @@ struct MainPanelView: View {
         let controlAlignment: VerticalAlignment =
             CopperComposerLayout.controlVerticalAlignment == .center ? .center : .top
 
-        return HStack(alignment: controlAlignment, spacing: 12) {
+        return HStack(alignment: controlAlignment, spacing: 9) {
             Button {
                 composerFocused = true
             } label: {
                 Image(systemName: "circle")
-                    .font(.system(size: 22, weight: .regular))
+                    .font(.system(size: CopperLayout.cardControlSize, weight: .regular, relativeTo: .body))
                     .foregroundStyle(Color.secondary.opacity(0.75))
                     .frame(
                         width: CopperComposerLayout.controlSize,
@@ -294,7 +306,7 @@ struct MainPanelView: View {
                 axis: .vertical
             )
             .textFieldStyle(.plain)
-            .font(.body)
+            .font(.system(size: CopperLayout.bodyFontSize, relativeTo: .body))
             .lineLimit(CopperComposerLayout.fieldLineLimit)
             .padding(.vertical, 6)
             .focused($composerFocused)
@@ -302,7 +314,7 @@ struct MainPanelView: View {
             .accessibilityLabel("Add a note or a prompt")
             .accessibilityAction(named: "Add note") { commitDraft() }
         }
-        .padding(14)
+        .padding(CopperLayout.cardPadding)
         .background(Color.white.opacity(0.70), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 19, style: .continuous)
@@ -378,12 +390,12 @@ struct NoteCard: View {
     }
 
     private var regularCard: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 9) {
             Button {
                 store.toggleCompleted(note.id)
             } label: {
                 Image(systemName: note.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22, weight: .regular))
+                    .font(.system(size: CopperLayout.cardControlSize, weight: .regular, relativeTo: .body))
                     .foregroundStyle(note.isCompleted ? Color.accentColor : Color.secondary.opacity(0.75))
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
@@ -396,7 +408,7 @@ struct NoteCard: View {
                 .strikethrough(note.isCompleted, color: .secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(16)
+        .padding(CopperLayout.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             Color.white.opacity(
@@ -635,7 +647,7 @@ struct InlineEditorCard: View {
 
 struct MarkdownPreview: View {
     let markdown: String
-    var lineLimit: Int? = 4
+    var lineLimit: Int? = 3
 
     var body: some View {
         Group {
@@ -645,8 +657,8 @@ struct MarkdownPreview: View {
                 Text(markdown)
             }
         }
-        .font(.body)
-        .lineSpacing(2)
+        .font(.system(size: CopperLayout.bodyFontSize, relativeTo: .body))
+        .lineSpacing(1)
         .lineLimit(lineLimit)
         .multilineTextAlignment(.leading)
     }
