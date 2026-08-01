@@ -15,4 +15,8 @@ public enum CopperComposerLayout {
     public static let minimumHeight: CGFloat = 29
     public static let maximumHeight: CGFloat = 112
     public static let textVerticalPadding: CGFloat = 12
+
+    public static func controlAlignment(for contentHeight: CGFloat) -> ControlVerticalAlignment {
+        contentHeight > minimumHeight ? .top : controlVerticalAlignment
+    }
 }

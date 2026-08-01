@@ -16,8 +16,8 @@ Scripts/BuildApp.sh                                      PASS
 Scripts/InstallApp.sh                                    PASS (bundle installed and validated at /Applications/Copper.app)
 swift build                                              PASS
 swift build -c release                                   PASS
-swift test                                                PASS (27 tests executed)
-swift test list                                           PASS (27 tests discovered)
+swift test                                                PASS (28 tests executed)
+swift test list                                           PASS (28 tests discovered)
 swiftc -parse-as-library Sources/CopperCore/Models.swift \
   Scripts/CopperSmoke.swift -o .build/CopperSmoke && \
   .build/CopperSmoke                                        PASS
@@ -31,9 +31,9 @@ The formal cases cover active-section routing and persistence, successive
 composer-equivalent inserts and search, reversible completion including the
 focused-card Space endpoint, capture-shortcut syntax/safety/conflict/reset and
 matching updates, deterministic copy/list/merge/move order, list completion and
-toast state only after a successful pasteboard write, separate
-Expand/inline-edit/new-window state, attributed AX text conversion and literal
-plain fallback, exactly-one capture ingestion, double-Shift
+toast state only after a successful pasteboard write, full-prompt popup and
+new-window state, attributed AX text conversion and literal plain fallback,
+exactly-one capture ingestion, double-Shift
 deduplication, conflicting-modifier rejection, rejection of source-destructive
 custom combinations, the no-repost invariant, and the production panel's
 normal-level activation/lifecycle contract. The added cases cover explicit
@@ -132,16 +132,17 @@ The store now owns a reversible transaction seam for persistent mutations. It
 records exact section/note/preference/active-section snapshots and the
 selection context needed by deletion undo; restored and reapplied snapshots
 are written to the same JSON file with original IDs and sort order. Focus,
-`expandedID`, `editingID`, and toast state are not history entries. The current
-coverage includes add/update/delete, completion, merge, move, capture, active
-section, and successful list-copy completion mutations; direct preference field
-edits followed only by `save()` remain outside history.
+`expandedID` and toast state are not history entries. The current coverage
+includes add/update/delete, completion, merge, move, capture, active section,
+and successful list-copy completion mutations; direct preference field edits
+followed only by `save()` remain outside history.
 
-`Escape` clears `selectedIDs` and the separate `focusedCardID`, including the
-combined text-editor route, while the native text responder may still receive
-`cancelOperation`. Plain Delete is not a Copper command. Command-Delete routes
-to task deletion only outside text editing; with an `NSTextView`/`NSTextField`
-first responder it remains on the native `deleteToBeginningOfLine:` path.
+`Escape` closes the prompt popup and clears `selectedIDs` and the separate
+`focusedCardID` in one step, including the combined text-editor route, while
+the native text responder may still receive `cancelOperation`. Plain Delete is
+not a Copper command. Command-Delete routes to task deletion only outside text
+editing; with an `NSTextView`/`NSTextField` first responder it remains on the
+native `deleteToBeginningOfLine:` path.
 Command-Z and Command-Shift-Z route to the store only outside text editing and
 to the native text responder otherwise. No physical keys, local/global event
 reposting, or foreground UI run was used for these new checks.
@@ -159,8 +160,8 @@ reposting, or foreground UI run was used for these new checks.
 | Capture cardinality, selection, clipboard and Copper activation | Background TextEdit/Safari/Chrome plus physical production default/custom TextEdit runs record one note and toast per gesture, preserved selection/clipboard, inactive Copper and unchanged active source app | **PASS (background and production runtime)** |
 | Capture toast position/nonactivation | TextEdit, Safari and fixed Chrome reports contain non-empty selection bounds; the 128 × 38 toast starts 12 points below the selection in top-left screen coordinates, is visible and never key | **PASS (background diagnostic route)** |
 | Copy, Copy as List, completion, Merge and Move | In the final exact bundle, focused `Command-C` copied one selected card without completing it and exposed one `Copied` toast; focused `Shift-Command-C` emitted two notes in visual order as a numbered list, completed both and exposed one `Copied as List` toast. Settings then persisted custom Copy `Command-Shift-K`, which copied once; real Search-field selections still used native `Command-C` before and after customisation. Merge and Move also ran in the visible UI | **PASS (foreground runtime)** |
-| Expand, inline Edit and Edit in New Window | Foreground Expand produced a distinct expanded container; Return opened inline edit; Command-Return opened the separate titled editor window | **PASS (foreground runtime)** |
-| Composer and core visual hierarchy | Current screenshot removes the internal composer scrollbar and invented submit icon; search, headers, cards, circles, spacing and card-like composer were compared with all 47 frames and frame 030 directly | **APPROXIMATION — observed hierarchy match; no pixel-perfect claim** |
+| Prompt popup and Edit in New Window | The 2026-08-01 background Computer Use run opened the full prompt with double-click and Return; the popup exposed a scrollable text editor, Save, Cancel and Close. Escape closed it and returned to the panel without the selection. Command-Return remains covered by the model/key-routing contract; no new foreground run was made after this integration | **PASS (background popup run; Command-Return formal/source)** |
+| Composer and core visual hierarchy | The 2026-08-01 background run showed a compact short composer with no visible scrollbar; a multiline value grew naturally and exposed a scrollbar only after overflow. Search, headers, cards, circles, spacing and the card-like composer remain an evidence-based visual approximation | **PASS for observed composer states; approximation for exact pixels** |
 | Accessibility variants and semantics | Forced modes cover Reduce Motion, Differentiate Without Color, Increased Contrast and accessibility scale; AX exposes one labelled/value/action element per card; complete Tab routing is observed | **PASS (rendered/AX/keyboard)** |
 | Privacy/network | Source/binary/entitlements audit plus a controlled zero-socket run; docs distinguish native app from website analytics | **PASS for current reconstruction** |
 | TextEdit runtime | Real selection captured `Copper **Rich Bold** and *italic* fallback fixture 2026-07-31` | **PASS (rich diagnostic route)** |
@@ -185,10 +186,10 @@ context-menu, completion and toast states.
 | Material/colour | Cool translucent hierarchy is present, but compressed video, desktop wallpaper and colour management prevent canonical token extraction. | **Approximation** |
 | Search/options/section headers | Current screenshot reproduces the search pill, circular ellipsis control, uppercase tracked headers and divider rules. | **Observed approximation** |
 | Cards/circular controls/Markdown | Current screenshot shows white rounded cards, leading circles and bold/italic preview. Type/line wrapping varies with macOS scaling. | **Observed approximation** |
-| Composer | Current screenshot shows the leading empty circle and card-like bottom field without the previous nested scrollbar or an unsupported submit icon. | **Observed approximation** |
+| Composer | The short-state screenshot shows the leading empty circle and compact card-like field without a visible scrollbar; the overflow screenshot shows the field growing with an automatic vertical scrollbar. | **Observed runtime approximation** |
 | Scroll behaviour/indicators | The public evidence does not establish inertia, virtualisation or persistent indicator rules; the main reconstruction hides persistent indicators. | **Unknown exact behaviour** |
 | Selected/completed cards | Foreground multi-selection showed two blue outlines; Copy as List then showed blue checks and strikethrough. | **Observed approximation** |
-| Context menu | A real foreground right-click exposed Copy, Copy as List, Mark as Done, Expand, Edit, Edit in New Window, Merge Notes and Move to; Computer Use returned the menu AX tree but no menu screenshot. | **Observed action inventory; exact visual parity unknown** |
+| Context menu | The current source exposes Copy, Copy as List, Mark as Done, Open, Edit in New Window, Merge Notes and Move to; the new background AX tree exposed Open and Edit in New Window on each card. | **Observed action inventory; exact visual parity unknown** |
 | Capture toast | Current TextEdit/Safari/Chrome reports plus live Computer Use observation show the dark non-key capsule next to the real selection. | **PASS as observed approximation** |
 | Copy toast | The foreground Copy as List screenshot and AX tree show the light `Copied as List` toast exactly once. | **Observed approximation** |
 | Settings | Unsafe/conflict/reset/custom flows were exercised in the native sheet; the public frames do not expose an exact reference design. | **Runtime PASS; visual parity unknown from public evidence** |
@@ -235,7 +236,7 @@ shortcut is retained as negative evidence because TextEdit handled the
 non-consumed key and altered the selected fixture; the UI now rejects that
 VoiceOver-modifier combination.
 
-Foreground Computer Use also exercised Search, section creation, sequential
+The historical foreground Computer Use run also exercised Search, section creation, sequential
 Composer inserts, multi-selection, Copy as List and its real numbered
 clipboard, completion, Merge, Move, Expand, inline Edit and Edit in New Window.
 The initial borderless panel could display focus but not receive keyboard input;
@@ -281,7 +282,7 @@ screen. The current report showed `windowClass=NSWindow`, `windowLevel=0`,
 `globalCaptureMonitorInstalled=false` and
 `localKeyboardMonitorInstalled=false`. Computer Use saved a screenshot and read
 the current full card labels, completion/selection values and the actions
-Select, Mark done, Copy, Copy as List, Expand, Edit, Edit in New Window and Move
+Select, Mark done, Copy, Copy as List, Open, Edit in New Window and Move
 without foregrounding Copper. Each card is now one AX element rather than a
 card plus duplicated visual check/text children. This validates the current AX
 structure and forced render paths. No physical key was synthesised in background
@@ -289,6 +290,25 @@ mode. Production full-screen was observed. The user then performed one real
 `Control-Right` transition; Computer Use found the production `CopperPanel` still
 visible and AX-addressable in the new Space. A subsequent real multi-monitor
 check confirmed that the production panel also remains usable across displays.
+
+## 2026-08-01 integration run
+
+The integration branch was built with `Scripts/BuildApp.sh` and launched with
+`Scripts/LaunchBackgroundUITest.sh`; the exact instance was stopped with
+`Scripts/StopBackgroundUITest.sh`. Computer Use inspected the resulting AX
+tree and screenshot without foregrounding Copper. The short composer showed no
+visible scrollbar. After entering multiline content, its height grew to the
+contract maximum and the AX tree exposed an automatic vertical scrollbar only
+once the content overflowed.
+
+A double-click on a long card opened the full-prompt sheet. The sheet exposed
+the complete prompt in a scrollable text editor and showed Save, Cancel and
+Close controls. Selecting a card and pressing Return opened the same sheet.
+Pressing Escape closed the sheet and returned to the panel; the card no longer
+had the selection state. The model suite separately covers invalid note IDs,
+prompt opening, update persistence with undo/redo, deletion of an open prompt,
+and the combined text-responder Escape route. No claim is made here about
+pixel-perfect parity or a new foreground `Command-Return` run.
 
 Current evidence is retained under
 `.scratch/copper-reconstruction/evidence/2026-07-31/`, including:

@@ -157,6 +157,9 @@ struct MainPanelView: View {
     @State private var isShowingSettings = false
     @State private var draft = ""
     @State private var measuredComposerHeight = CopperComposerLayout.minimumHeight
+    @ScaledMetric(relativeTo: .body) private var bodyFontSize = CopperLayout.bodyFontSize
+    @ScaledMetric(relativeTo: .caption) private var sectionFontSize = CopperLayout.sectionFontSize
+    @ScaledMetric(relativeTo: .body) private var cardControlSize = CopperLayout.cardControlSize
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.copperForceReduceMotion) private var forceReduceMotion
@@ -171,10 +174,12 @@ struct MainPanelView: View {
     }
 
     private var composerControlAlignment: VerticalAlignment {
-        guard composerInputHeight > CopperComposerLayout.minimumHeight else {
-            return CopperComposerLayout.controlVerticalAlignment == .center ? .center : .top
+        switch CopperComposerLayout.controlAlignment(for: composerInputHeight) {
+        case .center:
+            return .center
+        case .top:
+            return .top
         }
-        return .top
     }
 
     private var expandedNoteBinding: Binding<CopperNote?> {
@@ -254,12 +259,12 @@ struct MainPanelView: View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: CopperLayout.bodyFontSize))
+                    .font(.system(size: bodyFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 TextField("Search", text: $store.searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: CopperLayout.bodyFontSize))
+                    .font(.system(size: bodyFontSize))
                     .accessibilityLabel("Search notes")
             }
             .padding(.horizontal, 13)
@@ -295,7 +300,7 @@ struct MainPanelView: View {
             } label: {
                 HStack(spacing: 10) {
                     Text(section.title.uppercased())
-                        .font(.system(size: CopperLayout.sectionFontSize, weight: .semibold))
+                        .font(.system(size: sectionFontSize, weight: .semibold))
                         .tracking(1.15)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -324,7 +329,7 @@ struct MainPanelView: View {
                 composerFocused = true
             } label: {
                 Image(systemName: "circle")
-                    .font(.system(size: CopperLayout.cardControlSize, weight: .regular))
+                    .font(.system(size: cardControlSize, weight: .regular))
                     .foregroundStyle(Color.secondary.opacity(0.75))
                     .frame(
                         width: CopperComposerLayout.controlSize,
@@ -342,7 +347,7 @@ struct MainPanelView: View {
                     axis: .vertical
                 )
                 .textFieldStyle(.plain)
-                .font(.system(size: CopperLayout.bodyFontSize))
+                .font(.system(size: bodyFontSize))
                 .lineLimit(CopperComposerLayout.fieldLineLimit)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, CopperComposerLayout.textVerticalPadding / 2)
@@ -397,6 +402,7 @@ struct NoteCard: View {
     let note: CopperNote
     @ObservedObject var store: CopperStore
     @FocusState private var cardFocused: Bool
+    @ScaledMetric(relativeTo: .body) private var cardControlSize = CopperLayout.cardControlSize
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiateWithoutColor
     @Environment(\.colorSchemeContrast) private var systemContrast
@@ -423,7 +429,7 @@ struct NoteCard: View {
                 store.toggleCompleted(note.id)
             } label: {
                 Image(systemName: note.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: CopperLayout.cardControlSize, weight: .regular))
+                    .font(.system(size: cardControlSize, weight: .regular))
                     .foregroundStyle(note.isCompleted ? Color.accentColor : Color.secondary.opacity(0.75))
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
@@ -627,6 +633,7 @@ struct NoteDetailPopup: View {
     @ObservedObject var store: CopperStore
     let noteID: UUID
     @State private var draft: String
+    @ScaledMetric(relativeTo: .body) private var bodyFontSize = CopperLayout.bodyFontSize
     @FocusState private var editorFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
@@ -653,7 +660,7 @@ struct NoteDetailPopup: View {
             }
 
             TextEditor(text: $draft)
-                .font(.system(size: CopperLayout.bodyFontSize))
+                .font(.system(size: bodyFontSize))
                 .scrollContentBackground(.hidden)
                 .padding(10)
                 .frame(minHeight: 180, idealHeight: 320, maxHeight: 560)
@@ -714,6 +721,7 @@ struct NoteDetailPopup: View {
 struct MarkdownPreview: View {
     let markdown: String
     var lineLimit: Int? = 3
+    @ScaledMetric(relativeTo: .body) private var bodyFontSize = CopperLayout.bodyFontSize
 
     var body: some View {
         Group {
@@ -723,7 +731,7 @@ struct MarkdownPreview: View {
                 Text(markdown)
             }
         }
-        .font(.system(size: CopperLayout.bodyFontSize))
+        .font(.system(size: bodyFontSize))
         .lineSpacing(1)
         .lineLimit(lineLimit)
         .multilineTextAlignment(.leading)

@@ -169,7 +169,7 @@ struct CopperTests {
         #expect(!store.handleCardSpace(noteID: UUID()))
     }
 
-    @Test("Escape clears explicit selection and card focus without making focus selection")
+    @Test("Escape closes prompt detail and clears selection and card focus atomically")
     func escapeClearsSelectionAndCardFocus() throws {
         let url = temporaryURL("escape-selection")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -179,10 +179,12 @@ struct CopperTests {
         let note = try #require(store.addNote(markdown: "focus me", sectionID: section.id))
         store.ensureSelected(note.id)
         store.setFocusedCard(note.id)
+        store.expandedID = note.id
 
         #expect(store.handleEscape())
         #expect(store.selectedIDs.isEmpty)
         #expect(store.focusedCardID == nil)
+        #expect(store.expandedID == nil)
         #expect(!store.handleEscape())
     }
 
@@ -201,7 +203,6 @@ struct CopperTests {
         store.toggleSelection(second.id)
         store.setFocusedCard(second.id)
         store.expandedID = first.id
-        store.editingID = second.id
 
         store.deleteSelected()
 
@@ -209,7 +210,6 @@ struct CopperTests {
         #expect(store.selectedIDs.isEmpty)
         #expect(store.focusedCardID == nil)
         #expect(store.expandedID == nil)
-        #expect(store.editingID == nil)
         #expect(store.canUndo)
         #expect(store.undo())
         #expect(store.orderedNotes.map(\.id) == originalIDs)
@@ -515,21 +515,31 @@ struct CopperTests {
         #expect(reloaded.notes.first?.markdown == "first\n\nsecond")
     }
 
-    @Test("Expand state stays separate from editing")
-    func expandIsSeparateFromEditing() throws {
+    @Test("Open note detail selects a valid note and rejects unknown IDs")
+    func openNoteDetailValidatesNoteID() throws {
         let url = temporaryURL("expand")
         defer { try? FileManager.default.removeItem(at: url) }
 
         let store = CopperStore(fileURL: url, seedIfEmpty: false)
         let section = store.addSection(title: "Queue")
         let note = try #require(store.addNote(markdown: "expand me", sectionID: section.id))
-        store.expandedID = note.id
 
+        #expect(store.openNoteDetail(note.id))
         #expect(store.expandedID == note.id)
-        #expect(store.editingID == nil)
+        #expect(store.selectedIDs == Set([note.id]))
+        #expect(!store.openNoteDetail(UUID()))
+        #expect(store.expandedID == note.id)
+
+        store.updateNote(id: note.id, markdown: "saved from popup")
+        #expect(store.notes.first?.markdown == "saved from popup")
+        #expect(store.canUndo)
+        #expect(store.undo())
+        #expect(store.notes.first?.markdown == "expand me")
+        #expect(store.redo())
+        #expect(store.notes.first?.markdown == "saved from popup")
     }
 
-    @Test("Edit in New Window requests a distinct editor without entering inline edit")
+    @Test("Return opens prompt detail while Command-Return requests the separate editor")
     func editInNewWindowIsDistinct() throws {
         let url = temporaryURL("new-window")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -543,11 +553,10 @@ struct CopperTests {
 
         #expect(store.handleCardReturn(noteID: note.id, openInNewWindow: true))
         #expect(requestedID == note.id)
-        #expect(store.editingID == nil)
         #expect(store.expandedID == note.id)
 
         #expect(store.handleCardReturn(noteID: note.id, openInNewWindow: false))
-        #expect(store.editingID == note.id)
+        #expect(store.expandedID == note.id)
         #expect(requestedID == note.id)
     }
 

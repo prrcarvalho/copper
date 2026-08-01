@@ -24,13 +24,12 @@ The app is local-first and runs from a floating companion panel; the tested
 bundle is built at `.build/Copper.app` and can be installed at
 `/Applications/Copper.app`.
 
-Production uses a regular macOS activation policy so Copper has a Dock icon and
-appears in Command-Tab, while the visible companion remains a floating,
-nonactivating `NSPanel` during capture. Its native shell is draggable and
-resizable (`320×420` minimum, `430×760` first-launch size, `620` maximum width)
-and restores its frame between launches. The standard traffic lights remain
-hidden to match the public reference; `⌘W`, `⌘M` and `⌘0` hide, minimise and
-restore the panel.
+Production uses a regular macOS activation policy and a normal-level
+`CopperPanel`, so Copper has a Dock icon and appears in Command-Tab. Its native
+shell is draggable and resizable (`320×420` minimum, `430×760` first-launch
+size, `620` maximum width) and restores its frame between launches. The
+standard traffic lights remain hidden to match the public reference; `⌘W`,
+`⌘M` and `⌘0` hide, minimise and restore the panel.
 
 ## Product scope
 
@@ -40,7 +39,8 @@ The first usable version should provide:
 - global selected-text capture, initially through double `Shift`;
 - sections, search, Markdown previews and a bottom composer;
 - single and multi-selection;
-- copy, numbered-list copy, completion, editing, merging and moving notes;
+- copy, numbered-list copy, completion, full-prompt popup editing, merging and
+  moving notes;
 - customisable keyboard shortcuts;
 - local-only persistence with no account, sync, analytics or note telemetry.
 

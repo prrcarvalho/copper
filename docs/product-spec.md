@@ -593,17 +593,18 @@ search/sections, deterministic multi-note operations, reversible completion,
 configurable capture parsing/conflict/reset, Accessibility attributed-text
 conversion with Markdown-escaped literal plain fallback, a nonactivating
 selection-positioned toast,
-separate Expand/inline-edit/new-window paths, a card-like composer,
+full-prompt popup editing with double-click/Return opening and a distinct
+Command-Return editor window, a card-like composer,
 accessibility render paths and local-only persistence. Production retains its
-floating `CopperPanel`, an `NSPanel` subclass that can become key for text and
-card controls without becoming main. Its only system event monitor is the
+normal-level `CopperPanel`, an `NSPanel` subclass that can become key for text
+and card controls without becoming main. Its only system event monitor is the
 observational global capture monitor; in-app shortcuts use native menu/key
 handlers, so no local event monitor consumes or replaces input and no code
 reposts events. Custom global shortcuts require Command plus another modifier,
 and Control-Option is rejected as the VoiceOver modifier. This reduces, but
 cannot eliminate, conflicts with shortcuts owned by third-party source apps.
 
-The formal Swift Testing suite is discovered and executed by SwiftPM (21/21).
+The formal Swift Testing suite is discovered and executed by SwiftPM (28/28).
 Current controlled background evidence covers real rich selections in TextEdit,
 Safari and Chrome. Every final report records exactly one new note, exactly one
 `Captured` toast, a preserved source selection, unchanged clipboard, inactive
@@ -628,7 +629,8 @@ run demonstrated source-app interference and drove the stricter validation.
 Computer Use then verified Search, section creation, Composer + Return,
 multi-selection, Space, Command-Space, focused `Command-C`, focused
 `Shift-Command-C`, a custom persisted Copy shortcut, native text-field copy,
-completion, Merge, Move, Expand, Return, Command-Return, full Tab traversal,
+completion, Merge, Move, the historical Expand/inline-edit flow, Return,
+Command-Return, full Tab traversal,
 separate editor window and relaunch persistence. The production panel remained
 visible in a real TextEdit full-screen Space.
 
@@ -641,10 +643,8 @@ nor hidden one-to-one parity is claimed.
 
 ## 18. Companion shell polish (2026-07-31)
 
-The reconstruction now uses a hybrid macOS shell: production is a regular app
-with a Dock/Command-Tab identity, while the visible companion remains a
-floating, nonactivating `NSPanel` at floating level with all-Spaces and
-full-screen auxiliary collection behaviour. The three standard traffic lights
+The reconstruction now uses a regular macOS app with a Dock/Command-Tab
+identity and a normal-level `CopperPanel`. The three standard traffic lights
 are hidden, but the native titled/resizable/closable/miniaturizable style is
 retained. The first-launch frame is `430×760`, the minimum is `320×420`, the
 maximum width is `620`, and saved frames are clamped to the visible screen.

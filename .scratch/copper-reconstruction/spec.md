@@ -28,10 +28,12 @@ hidden behaviour.
 - Preserve supported attributed formatting as Markdown, with a plain-text
   fallback for unsupported Accessibility values.
 - Support search, sections, multi-selection, deterministic copy/list output,
-  reversible completion, merge, move, inline edit, Expand and a distinct edit
-  window.
-- Escape clears explicit task selection and card focus without treating text
-  editor focus as task selection. Command-Delete deletes selected tasks;
+  reversible completion, merge, move, full-prompt popup editing and a distinct
+  edit window. A double-click or Return on a selected card opens the popup;
+  Command-Return keeps the distinct edit window.
+- Escape closes an open prompt popup and clears explicit task selection and
+  card focus in the same step, without treating text editor focus as task
+  selection. Command-Delete deletes selected tasks;
   Command-Z and Command-Shift-Z undo/redo reversible store mutations.
 - Keep the composer visually consistent with note cards, including its leading
   circular control.
@@ -67,7 +69,7 @@ hidden behaviour.
 - `Scripts/BuildApp.sh`, `swift build`, release build and signature validation
   must pass.
 - `swift test` must discover and execute the formal suite, not merely compile a
-  test target. The current suite discovers and executes 27 cases, including
+  test target. The current suite discovers and executes 28 cases, including
   native panel style, geometry and close contracts.
 - Runtime evidence and its limits are recorded only in
   `docs/ux-verification.md`.
