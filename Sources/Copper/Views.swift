@@ -14,6 +14,14 @@ private struct CopperForceHighContrastKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct CopperComposerHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 private enum CopperLayout {
     static let bodyFontSize: CGFloat = 14
     static let sectionFontSize: CGFloat = 10
@@ -148,11 +156,38 @@ struct MainPanelView: View {
     @State private var isAddingSection = false
     @State private var isShowingSettings = false
     @State private var draft = ""
+    @State private var measuredComposerHeight = CopperComposerLayout.minimumHeight
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.copperForceReduceMotion) private var forceReduceMotion
 
     private var reduceMotion: Bool { systemReduceMotion || forceReduceMotion }
+
+    private var composerInputHeight: CGFloat {
+        min(
+            max(measuredComposerHeight, CopperComposerLayout.minimumHeight),
+            CopperComposerLayout.maximumHeight
+        )
+    }
+
+    private var composerControlAlignment: VerticalAlignment {
+        guard composerInputHeight > CopperComposerLayout.minimumHeight else {
+            return CopperComposerLayout.controlVerticalAlignment == .center ? .center : .top
+        }
+        return .top
+    }
+
+    private var expandedNoteBinding: Binding<CopperNote?> {
+        Binding(
+            get: {
+                guard let expandedID = store.expandedID else { return nil }
+                return store.notes.first(where: { $0.id == expandedID })
+            },
+            set: { note in
+                store.expandedID = note?.id
+            }
+        )
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -199,6 +234,9 @@ struct MainPanelView: View {
         .sheet(isPresented: $isShowingSettings) {
             SettingsView(store: store)
         }
+        .sheet(item: expandedNoteBinding) { note in
+            NoteDetailPopup(store: store, noteID: note.id)
+        }
         .alert("New section", isPresented: $isAddingSection) {
             TextField("Section name", text: $newSectionTitle)
             Button("Cancel", role: .cancel) { newSectionTitle = "" }
@@ -216,12 +254,12 @@ struct MainPanelView: View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: CopperLayout.bodyFontSize, relativeTo: .body))
+                    .font(.system(size: CopperLayout.bodyFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
                 TextField("Search", text: $store.searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: CopperLayout.bodyFontSize, relativeTo: .body))
+                    .font(.system(size: CopperLayout.bodyFontSize))
                     .accessibilityLabel("Search notes")
             }
             .padding(.horizontal, 13)
@@ -257,7 +295,7 @@ struct MainPanelView: View {
             } label: {
                 HStack(spacing: 10) {
                     Text(section.title.uppercased())
-                        .font(.system(size: CopperLayout.sectionFontSize, weight: .semibold, relativeTo: .caption))
+                        .font(.system(size: CopperLayout.sectionFontSize, weight: .semibold))
                         .tracking(1.15)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -281,15 +319,12 @@ struct MainPanelView: View {
     }
 
     private var composer: some View {
-        let controlAlignment: VerticalAlignment =
-            CopperComposerLayout.controlVerticalAlignment == .center ? .center : .top
-
-        return HStack(alignment: controlAlignment, spacing: 9) {
+        HStack(alignment: composerControlAlignment, spacing: 9) {
             Button {
                 composerFocused = true
             } label: {
                 Image(systemName: "circle")
-                    .font(.system(size: CopperLayout.cardControlSize, weight: .regular, relativeTo: .body))
+                    .font(.system(size: CopperLayout.cardControlSize, weight: .regular))
                     .foregroundStyle(Color.secondary.opacity(0.75))
                     .frame(
                         width: CopperComposerLayout.controlSize,
@@ -300,19 +335,42 @@ struct MainPanelView: View {
             .focusable(true)
             .accessibilityLabel("Focus composer")
 
-            TextField(
-                CopperComposerLayout.placeholder,
-                text: $draft,
-                axis: .vertical
-            )
-            .textFieldStyle(.plain)
-            .font(.system(size: CopperLayout.bodyFontSize, relativeTo: .body))
-            .lineLimit(CopperComposerLayout.fieldLineLimit)
-            .padding(.vertical, 6)
-            .focused($composerFocused)
-            .onSubmit(commitDraft)
-            .accessibilityLabel("Add a note or a prompt")
-            .accessibilityAction(named: "Add note") { commitDraft() }
+            ScrollView(.vertical) {
+                TextField(
+                    CopperComposerLayout.placeholder,
+                    text: $draft,
+                    axis: .vertical
+                )
+                .textFieldStyle(.plain)
+                .font(.system(size: CopperLayout.bodyFontSize))
+                .lineLimit(CopperComposerLayout.fieldLineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, CopperComposerLayout.textVerticalPadding / 2)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: CopperComposerHeightPreferenceKey.self,
+                            value: proxy.size.height
+                        )
+                    }
+                }
+                .focused($composerFocused)
+                .onSubmit(commitDraft)
+                .accessibilityLabel("Add a note or a prompt")
+                .accessibilityAction(named: "Add note") { commitDraft() }
+            }
+            .frame(height: composerInputHeight, alignment: .top)
+            .scrollIndicators(.automatic)
+            .onPreferenceChange(CopperComposerHeightPreferenceKey.self) { height in
+                guard height > 0 else { return }
+                let clamped = min(
+                    max(height, CopperComposerLayout.minimumHeight),
+                    CopperComposerLayout.maximumHeight
+                )
+                guard abs(measuredComposerHeight - clamped) > 0.5 else { return }
+                measuredComposerHeight = clamped
+            }
         }
         .padding(CopperLayout.cardPadding)
         .background(Color.white.opacity(0.70), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
@@ -325,6 +383,7 @@ struct MainPanelView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: composerInputHeight)
     }
 
     private func commitDraft() {
@@ -355,38 +414,7 @@ struct NoteCard: View {
     }
 
     var body: some View {
-        if store.editingID == note.id {
-            InlineEditorCard(note: note, store: store)
-        } else if store.expandedID == note.id {
-            expandedCard
-        } else {
-            regularCard
-        }
-    }
-
-    private var expandedCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Expanded note")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Collapse") { store.expandedID = nil }
-                    .buttonStyle(.borderless)
-            }
-            MarkdownPreview(markdown: note.markdown, lineLimit: nil)
-                .foregroundStyle(note.isCompleted ? .secondary : .primary)
-                .strikethrough(note.isCompleted, color: .secondary)
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 19, style: .continuous)
-                .stroke(Color.accentColor.opacity(0.72), lineWidth: 1.5)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Expanded note")
+        regularCard
     }
 
     private var regularCard: some View {
@@ -395,7 +423,7 @@ struct NoteCard: View {
                 store.toggleCompleted(note.id)
             } label: {
                 Image(systemName: note.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: CopperLayout.cardControlSize, weight: .regular, relativeTo: .body))
+                    .font(.system(size: CopperLayout.cardControlSize, weight: .regular))
                     .foregroundStyle(note.isCompleted ? Color.accentColor : Color.secondary.opacity(0.75))
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
@@ -428,7 +456,16 @@ struct NoteCard: View {
                 )
         }
         .contentShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
-        .onTapGesture { store.toggleSelection(note.id) }
+        .gesture(
+            TapGesture(count: 2)
+                .onEnded { _ in
+                    _ = store.openNoteDetail(note.id)
+                }
+                .exclusively(
+                    before: TapGesture(count: 1)
+                        .onEnded { _ in store.toggleSelection(note.id) }
+                )
+        )
         .focusable(true)
         .focused($cardFocused)
         // Keep the card in the keyboard/accessibility focus system, but own
@@ -477,13 +514,9 @@ struct NoteCard: View {
                 _ = store.copySelected(asList: true)
             }
             if store.selectedIDs.count <= 1 {
-                Button("Expand") {
-                    store.ensureSelected(note.id)
-                    store.expandedID = note.id
+                Button("Open") {
+                    _ = store.handleCardReturn(noteID: note.id, openInNewWindow: false)
                 }
-            }
-            Button("Edit") {
-                _ = store.handleCardReturn(noteID: note.id, openInNewWindow: false)
             }
             Button("Edit in New Window") {
                 _ = store.handleCardReturn(noteID: note.id, openInNewWindow: true)
@@ -559,19 +592,13 @@ struct NoteCard: View {
         }
         .keyboardShortcut(.space, modifiers: [])
 
-        Button("Expand") {
-            store.ensureSelected(note.id)
-            store.expandedID = note.id
+        Button("Open") {
+            _ = store.handleCardReturn(noteID: note.id, openInNewWindow: false)
         }
+        .keyboardShortcut(.return, modifiers: [])
         .disabled(store.selectedIDs.count > 1 && !store.selectedIDs.isEmpty)
 
         Divider()
-
-        Button("Edit") {
-            store.ensureSelected(note.id)
-            store.editingID = note.id
-        }
-        .keyboardShortcut(.return, modifiers: [])
 
         Button("Edit in New Window") {
             store.ensureSelected(note.id)
@@ -596,52 +623,91 @@ struct NoteCard: View {
     }
 }
 
-struct InlineEditorCard: View {
-    let note: CopperNote
+struct NoteDetailPopup: View {
     @ObservedObject var store: CopperStore
+    let noteID: UUID
     @State private var draft: String
+    @FocusState private var editorFocused: Bool
+    @Environment(\.dismiss) private var dismiss
 
-    init(note: CopperNote, store: CopperStore) {
-        self.note = note
+    init(store: CopperStore, noteID: UUID) {
         self.store = store
-        _draft = State(initialValue: note.markdown)
+        self.noteID = noteID
+        _draft = State(initialValue: store.notes.first(where: { $0.id == noteID })?.markdown ?? "")
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Prompt")
+                        .font(.title3.weight(.semibold))
+                    Text("View or edit the complete prompt")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Close") { close() }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Close prompt popup")
+            }
+
             TextEditor(text: $draft)
-                .font(.body)
+                .font(.system(size: CopperLayout.bodyFontSize))
                 .scrollContentBackground(.hidden)
                 .padding(10)
-                .frame(minHeight: 88, maxHeight: 150)
-                .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .frame(minHeight: 180, idealHeight: 320, maxHeight: 560)
+                .background(
+                    Color(nsColor: .textBackgroundColor),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.accentColor.opacity(0.55), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.accentColor.opacity(0.42), lineWidth: 1)
                 }
-                .accessibilityLabel("Edit note")
+                .scrollIndicators(.automatic)
+                .focused($editorFocused)
+                .accessibilityLabel("Full prompt content")
 
             HStack(spacing: 8) {
                 Spacer()
-                Button("Cancel") { store.editingID = nil }
-                    .keyboardShortcut(.escape, modifiers: [])
-                Button("Save") {
-                    store.updateNote(id: note.id, markdown: draft)
-                    store.editingID = nil
-                }
-                .keyboardShortcut(.return, modifiers: [.command])
-                .buttonStyle(.borderedProminent)
+                Button("Cancel") { close() }
+                Button("Save") { save() }
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .buttonStyle(.borderedProminent)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 19, style: .continuous)
-                .stroke(Color.accentColor, lineWidth: 2)
+        .padding(24)
+        .frame(
+            minWidth: 360,
+            idealWidth: 420,
+            maxWidth: 560,
+            minHeight: 300,
+            idealHeight: 420,
+            maxHeight: 700
+        )
+        .onAppear { editorFocused = true }
+        .onExitCommand {
+            _ = store.handleEscape()
+            dismiss()
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Editing note")
+        .onDisappear {
+            if store.expandedID == noteID {
+                store.expandedID = nil
+            }
+        }
+    }
+
+    private func close() {
+        store.expandedID = nil
+        dismiss()
+    }
+
+    private func save() {
+        store.updateNote(id: noteID, markdown: draft)
+        store.expandedID = nil
+        dismiss()
     }
 }
 
@@ -657,7 +723,7 @@ struct MarkdownPreview: View {
                 Text(markdown)
             }
         }
-        .font(.system(size: CopperLayout.bodyFontSize, relativeTo: .body))
+        .font(.system(size: CopperLayout.bodyFontSize))
         .lineSpacing(1)
         .lineLimit(lineLimit)
         .multilineTextAlignment(.leading)

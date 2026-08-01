@@ -393,7 +393,6 @@ public final class CopperStore: ObservableObject {
     @Published public private(set) var focusedCardID: UUID? = nil
     @Published public private(set) var activeSectionID: UUID? = nil
     @Published public var expandedID: UUID? = nil
-    @Published public var editingID: UUID? = nil
     @Published public var toast: CopperToast?
 
     public let fileURL: URL
@@ -499,9 +498,6 @@ public final class CopperStore: ObservableObject {
         if let expandedID, !validNoteIDs.contains(expandedID) {
             self.expandedID = nil
         }
-        if let editingID, !validNoteIDs.contains(editingID) {
-            self.editingID = nil
-        }
         // Focus is a live AppKit/SwiftUI concern, not part of an undo entry.
         // Clearing it also prevents an old focus ring from surviving a restore.
         focusedCardID = nil
@@ -585,7 +581,6 @@ public final class CopperStore: ObservableObject {
         performPersistentMutation {
             notes[index].markdown = cleaned
             notes[index].updatedAt = Date()
-            editingID = nil
         }
     }
 
@@ -623,7 +618,15 @@ public final class CopperStore: ObservableObject {
         if openInNewWindow {
             return requestEditInNewWindow(noteID)
         }
-        editingID = noteID
+        return openNoteDetail(noteID)
+    }
+
+    /// Opens a note in the in-app full-content editor.
+    @discardableResult
+    public func openNoteDetail(_ noteID: UUID) -> Bool {
+        guard notes.contains(where: { $0.id == noteID }) else { return false }
+        ensureSelected(noteID)
+        expandedID = noteID
         return true
     }
 
@@ -646,7 +649,8 @@ public final class CopperStore: ObservableObject {
     /// does not cancel or rewrite a text editor's undo/focus state.
     @discardableResult
     public func handleEscape() -> Bool {
-        let changed = !selectedIDs.isEmpty || focusedCardID != nil
+        let changed = expandedID != nil || !selectedIDs.isEmpty || focusedCardID != nil
+        expandedID = nil
         selectedIDs.removeAll()
         focusedCardID = nil
         return changed
@@ -661,9 +665,6 @@ public final class CopperStore: ObservableObject {
             self.selectedIDs.removeAll()
             if let expandedID, selectedIDs.contains(expandedID) {
                 self.expandedID = nil
-            }
-            if let editingID, selectedIDs.contains(editingID) {
-                self.editingID = nil
             }
             if let focusedCardID, selectedIDs.contains(focusedCardID) {
                 self.focusedCardID = nil
