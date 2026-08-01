@@ -32,7 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var liveCaptureGestureCount = 0
     private var liveCaptureSuccessCount = 0
     private var showPanelObserver: NSObjectProtocol?
-    private var hidePanelObserver: NSObjectProtocol?
 
     override init() {
         let arguments = ProcessInfo.processInfo.arguments
@@ -58,19 +57,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.showCopper(activate: true)
             }
         }
-        hidePanelObserver = NotificationCenter.default.addObserver(
-            forName: .copperHidePanel,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.panel?.orderOut(nil)
-            }
-        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(backgroundUITest ? .accessory : .regular)
+        NSApp.setActivationPolicy(
+            backgroundUITest
+                ? CopperWindowLifecycleContract.backgroundUITestActivationPolicy
+                : CopperWindowLifecycleContract.productionActivationPolicy
+        )
 
         if backgroundUITest {
             let testWindow = NSWindow(
@@ -80,8 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 defer: false
             )
             testWindow.title = "Copper — Background UI Test"
-            testWindow.level = .normal
-            testWindow.collectionBehavior = []
+            testWindow.level = CopperWindowLifecycleContract.backgroundUITestWindowLevel
+            testWindow.collectionBehavior = CopperWindowLifecycleContract.backgroundUITestCollectionBehavior
             testWindow.appearance = NSAppearance(named: .aqua)
             testWindow.isOpaque = false
             testWindow.backgroundColor = .clear
@@ -110,11 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 defer: false
             )
             panel.title = "Copper"
-            panel.isFloatingPanel = true
-            panel.level = .floating
+            panel.isFloatingPanel = false
+            panel.level = CopperWindowLifecycleContract.productionWindowLevel
             panel.appearance = NSAppearance(named: .aqua)
             panel.hidesOnDeactivate = false
-            panel.becomesKeyOnlyIfNeeded = true
+            panel.becomesKeyOnlyIfNeeded = false
             panel.isOpaque = false
             panel.backgroundColor = .clear
             panel.hasShadow = true
@@ -122,11 +116,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel.titlebarAppearsTransparent = true
             panel.titlebarSeparatorStyle = .none
             panel.isMovable = true
-            panel.isMovableByWindowBackground = true
+            // Only CopperPanelContentView's narrow top drag strip may move
+            // the window. Background dragging would steal card, search,
+            // button, composer, and editor hit targets.
+            panel.isMovableByWindowBackground = false
             panel.isReleasedWhenClosed = false
             panel.minSize = CopperWindowGeometry.minimumSize
             panel.maxSize = CopperWindowGeometry.maximumSize(for: visibleFrame)
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.collectionBehavior = CopperWindowLifecycleContract.productionCollectionBehavior
             for button in [
                 NSWindow.ButtonType.closeButton,
                 .miniaturizeButton,
@@ -145,9 +142,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // limits, so apply the explicit companion contract afterwards.
             constrainProductionPanel(panel)
             panel.delegate = self
-            // Keep the production companion visible without stealing focus from
-            // the app the user is working in.
-            panel.orderFrontRegardless()
+            // A normal-level order does not activate Copper or force it above
+            // the user's current application.
+            panel.orderFront(nil)
             self.panel = panel
             // SwiftUI updates NSHostingView's intrinsic size on the next run
             // loop and can restore AppKit's unconstrained defaults. Reapply the
@@ -203,8 +200,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        guard !backgroundUITest, let panel, !panel.isVisible || panel.isMiniaturized else { return }
-        showCopper(activate: false)
+        guard !backgroundUITest, panel != nil else { return }
+        showCopper(activate: false, focus: true)
     }
 
     func applicationDidChangeScreenParameters(_ notification: Notification) {
@@ -235,13 +232,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NotificationCenter.default.removeObserver(observer)
             showPanelObserver = nil
         }
-        if let observer = hidePanelObserver {
-            NotificationCenter.default.removeObserver(observer)
-            hidePanelObserver = nil
-        }
     }
 
-    private func showCopper(activate: Bool) {
+    private func showCopper(activate: Bool, focus: Bool = true) {
         guard !backgroundUITest, let panel = panel as? CopperPanel else { return }
         if panel.isMiniaturized {
             panel.deminiaturize(nil)
@@ -249,7 +242,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if activate {
             NSApp.activate(ignoringOtherApps: true)
         }
-        panel.makeKeyAndOrderFront(nil)
+        if focus {
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            panel.orderFront(nil)
+        }
     }
 
     private func visibleFrame(for window: NSWindow?) -> NSRect {
@@ -805,13 +802,24 @@ private extension NSPanel {
 
 extension Notification.Name {
     static let copperShowPanel = Notification.Name("Copper.ShowPanel")
-    static let copperHidePanel = Notification.Name("Copper.HidePanel")
 }
 
 struct CopperCommands: Commands {
     @ObservedObject var store: CopperStore
 
     var body: some Commands {
+        CommandGroup(replacing: .undoRedo) {
+            Button("Undo") {
+                route(.undo) { _ = store.undo() }
+            }
+            .keyboardShortcut("z", modifiers: [.command])
+
+            Button("Redo") {
+                route(.redo) { _ = store.redo() }
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+        }
+
         CommandGroup(replacing: .pasteboard) {
             Button("Cut") {
                 sendTextAction(#selector(NSText.cut(_:)))
@@ -849,11 +857,6 @@ struct CopperCommands: Commands {
             }
             .keyboardShortcut("0", modifiers: [.command])
 
-            Button("Hide Copper") {
-                NotificationCenter.default.post(name: .copperHidePanel, object: nil)
-            }
-            .keyboardShortcut("w", modifiers: [.command])
-
             Divider()
             commandButton(
                 "Toggle Done",
@@ -861,14 +864,58 @@ struct CopperCommands: Commands {
             ) { store.toggleSelectedCompletion() }
             Button("Merge Notes") { store.mergeSelected() }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
+            Button("Delete Selected Notes") {
+                route(.commandDelete) { store.deleteSelected() }
+            }
+            .keyboardShortcut(.delete, modifiers: [.command])
             Divider()
-            Button("Clear Selection") { store.clearSelection() }
+            Button("Clear Selection") {
+                route(.escape) { _ = store.handleEscape() }
+            }
                 .keyboardShortcut(.escape, modifiers: [])
         }
     }
 
     private var isEditingText: Bool {
-        NSApp.keyWindow?.firstResponder is NSTextView
+        switch firstResponderKind {
+        case .textEditor: return true
+        case .other: return false
+        }
+    }
+
+    private var firstResponderKind: CopperFirstResponderKind {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return .other }
+        return responder is NSTextView || responder is NSTextField ? .textEditor : .other
+    }
+
+    private func route(_ command: CopperKeyCommand, copperAction: () -> Void) {
+        switch CopperCommandRouting.destination(for: command, firstResponder: firstResponderKind) {
+        case .copper:
+            copperAction()
+        case .ignored:
+            break
+        case .textEditor:
+            switch command {
+            case .plainDelete:
+                // No Copper command is registered for plain Delete. The
+                // native text responder keeps the event in its own path.
+                break
+            case .commandDelete:
+                // Command-Delete is the native delete-to-beginning-of-line
+                // action. It is deliberately never Copper task deletion when
+                // an NSTextView/NSTextField is first responder.
+                _ = sendTextAction(#selector(NSText.deleteToBeginningOfLine(_:)))
+            case .undo:
+                _ = sendTextAction(Selector(("undo:")))
+            case .redo:
+                _ = sendTextAction(Selector(("redo:")))
+            case .escape:
+                break
+            }
+        case .textEditorAndCopper:
+            _ = store.handleEscape()
+            _ = sendTextAction(#selector(NSResponder.cancelOperation(_:)))
+        }
     }
 
     @discardableResult

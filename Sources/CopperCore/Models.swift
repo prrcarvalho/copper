@@ -49,23 +49,39 @@ public enum CopperWindowGeometry {
     }
 }
 
-/// A titled, nonactivating panel can still accept keyboard focus for its text
-/// fields without becoming the application's main window. The standard
-/// buttons are hidden by the production shell, while the native style remains
-/// available for edge resizing and the standard Command-W/Command-M actions.
+/// A titled companion panel uses the normal AppKit window level so it behaves
+/// like an ordinary macOS window when the user clicks it, selects Copper from
+/// the Dock, or switches to it with Command-Tab. The production shell hides
+/// the standard buttons, while the native style remains available for edge
+/// resizing and the standard Command-W/Command-M actions.
 @MainActor
 public final class CopperPanel: NSPanel {
     public static let companionStyleMask: NSWindow.StyleMask = [
         .titled,
         .fullSizeContentView,
-        .nonactivatingPanel,
         .resizable,
         .closable,
         .miniaturizable,
     ]
 
+    public override init(
+        contentRect: NSRect,
+        styleMask: NSWindow.StyleMask,
+        backing: NSWindow.BackingStoreType,
+        defer flag: Bool
+    ) {
+        super.init(contentRect: contentRect, styleMask: styleMask, backing: backing, defer: flag)
+        level = .normal
+        isFloatingPanel = false
+        collectionBehavior = []
+        hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = false
+        isMovableByWindowBackground = false
+        isReleasedWhenClosed = false
+    }
+
     public override var canBecomeKey: Bool { true }
-    public override var canBecomeMain: Bool { false }
+    public override var canBecomeMain: Bool { true }
 
     /// Applies the shared companion geometry contract after AppKit/SwiftUI
     /// layout passes. Returning whether the frame changed keeps the shell's
@@ -127,7 +143,7 @@ public struct CopperNote: Codable, Hashable, Identifiable {
     }
 }
 
-public struct CopperPreferences: Codable {
+public struct CopperPreferences: Codable, Equatable {
     public var captureShortcut = "Shift + Shift"
     public var copyShortcut = "⌘C"
     public var copyAsListShortcut = "⇧⌘C"
@@ -299,6 +315,64 @@ public enum CopperToastKind {
     case error
 }
 
+/// Explicit command intents used by Copper's menu/key routing. Plain Delete
+/// is intentionally represented separately so it can never fall through to
+/// task deletion when no text editor is active.
+public enum CopperKeyCommand: Equatable {
+    case plainDelete
+    case commandDelete
+    case undo
+    case redo
+    case escape
+}
+
+public enum CopperFirstResponderKind: Equatable {
+    case textEditor
+    case other
+}
+
+public enum CopperCommandDestination: Equatable {
+    case copper
+    case textEditor
+    case textEditorAndCopper
+    case ignored
+}
+
+public enum CopperCommandRouting {
+    public static func destination(
+        for command: CopperKeyCommand,
+        firstResponder: CopperFirstResponderKind
+    ) -> CopperCommandDestination {
+        if firstResponder == .textEditor {
+            switch command {
+            case .plainDelete, .commandDelete, .undo, .redo:
+                return .textEditor
+            case .escape:
+                return .textEditorAndCopper
+            }
+        }
+
+        switch command {
+        case .plainDelete:
+            return .ignored
+        case .commandDelete, .undo, .redo, .escape:
+            return .copper
+        }
+    }
+}
+
+/// Window values shared by production and the non-focus-stealing UI-test
+/// launch. Keeping these values in CopperCore gives the lifecycle contract a
+/// deterministic seam without requiring a foreground AppKit test.
+public enum CopperWindowLifecycleContract {
+    public static let productionActivationPolicy: NSApplication.ActivationPolicy = .regular
+    public static let backgroundUITestActivationPolicy: NSApplication.ActivationPolicy = .accessory
+    public static let productionWindowLevel: NSWindow.Level = .normal
+    public static let backgroundUITestWindowLevel: NSWindow.Level = .normal
+    public static let productionCollectionBehavior: NSWindow.CollectionBehavior = []
+    public static let backgroundUITestCollectionBehavior: NSWindow.CollectionBehavior = []
+}
+
 public struct CopperToast: Identifiable {
     public let id = UUID()
     public let message: String
@@ -316,6 +390,7 @@ public final class CopperStore: ObservableObject {
     @Published public var preferences = CopperPreferences()
     @Published public var searchText = ""
     @Published public private(set) var selectedIDs: Set<UUID> = []
+    @Published public private(set) var focusedCardID: UUID? = nil
     @Published public private(set) var activeSectionID: UUID? = nil
     @Published public var expandedID: UUID? = nil
     @Published public var editingID: UUID? = nil
@@ -323,6 +398,23 @@ public final class CopperStore: ObservableObject {
 
     public let fileURL: URL
     public var openEditor: ((UUID) -> Void)?
+
+    private struct PersistentState: Equatable {
+        var sections: [CopperSection]
+        var notes: [CopperNote]
+        var preferences: CopperPreferences
+        var activeSectionID: UUID?
+    }
+
+    private struct HistoryEntry {
+        let before: PersistentState
+        let after: PersistentState
+        let beforeSelection: Set<UUID>
+        let afterSelection: Set<UUID>
+    }
+
+    private var undoStack: [HistoryEntry] = []
+    private var redoStack: [HistoryEntry] = []
 
     public init(fileURL: URL? = nil, seedIfEmpty: Bool = true) {
         if let fileURL {
@@ -365,54 +457,148 @@ public final class CopperStore: ObservableObject {
         }
     }
 
+    public var canUndo: Bool { !undoStack.isEmpty }
+    public var canRedo: Bool { !redoStack.isEmpty }
+
+    private var persistentState: PersistentState {
+        PersistentState(
+            sections: sections,
+            notes: notes,
+            preferences: preferences,
+            activeSectionID: activeSectionID
+        )
+    }
+
+    private var validNoteIDs: Set<UUID> {
+        Set(notes.map(\.id))
+    }
+
+    private func performPersistentMutation(_ mutation: () -> Void) {
+        let before = persistentState
+        let beforeSelection = selectedIDs
+        mutation()
+        let after = persistentState
+        guard before != after else { return }
+
+        undoStack.append(HistoryEntry(
+            before: before,
+            after: after,
+            beforeSelection: beforeSelection,
+            afterSelection: selectedIDs.intersection(validNoteIDs)
+        ))
+        redoStack.removeAll()
+        save()
+    }
+
+    private func restore(_ state: PersistentState, selection: Set<UUID>) {
+        sections = state.sections
+        notes = state.notes
+        preferences = state.preferences
+        activeSectionID = state.activeSectionID
+        selectedIDs = selection.intersection(validNoteIDs)
+        if let expandedID, !validNoteIDs.contains(expandedID) {
+            self.expandedID = nil
+        }
+        if let editingID, !validNoteIDs.contains(editingID) {
+            self.editingID = nil
+        }
+        // Focus is a live AppKit/SwiftUI concern, not part of an undo entry.
+        // Clearing it also prevents an old focus ring from surviving a restore.
+        focusedCardID = nil
+        save()
+    }
+
+    @discardableResult
+    public func undo() -> Bool {
+        guard let entry = undoStack.popLast() else { return false }
+        redoStack.append(entry)
+        restore(entry.before, selection: entry.beforeSelection)
+        return true
+    }
+
+    @discardableResult
+    public func redo() -> Bool {
+        guard let entry = redoStack.popLast() else { return false }
+        undoStack.append(entry)
+        restore(entry.after, selection: entry.afterSelection)
+        return true
+    }
+
     @discardableResult
     public func addNote(markdown: String, sectionID: UUID? = nil) -> CopperNote? {
         let cleaned = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
-        let destination = sectionID ?? activeSectionID ?? orderedSections.first?.id ?? addSection(title: "INBOX").id
-        guard sections.contains(where: { $0.id == destination }) else { return nil }
-        activeSectionID = destination
-        let index = notes.filter { $0.sectionID == destination }.map(\.sortIndex).max().map { $0 + 1 } ?? 0
-        let note = CopperNote(sectionID: destination, markdown: cleaned, sortIndex: index)
-        notes.append(note)
-        save()
+        if let sectionID, !sections.contains(where: { $0.id == sectionID }) {
+            return nil
+        }
+
+        var note: CopperNote?
+        performPersistentMutation {
+            var destination = sectionID ?? activeSectionID ?? orderedSections.first?.id
+            if destination == nil {
+                let inbox = CopperSection(title: "INBOX", sortIndex: sections.count)
+                sections.append(inbox)
+                destination = inbox.id
+            }
+            guard let destination, sections.contains(where: { $0.id == destination }) else { return }
+            activeSectionID = destination
+            let index = notes.filter { $0.sectionID == destination }.map(\.sortIndex).max().map { $0 + 1 } ?? 0
+            let created = CopperNote(sectionID: destination, markdown: cleaned, sortIndex: index)
+            notes.append(created)
+            note = created
+        }
         return note
     }
 
     @discardableResult
     public func addSection(title: String) -> CopperSection {
         let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let section = CopperSection(title: cleaned.isEmpty ? "UNTITLED" : cleaned.uppercased(), sortIndex: sections.count)
-        sections.append(section)
-        activeSectionID = section.id
-        save()
+        var section: CopperSection?
+        performPersistentMutation {
+            let created = CopperSection(
+                title: cleaned.isEmpty ? "UNTITLED" : cleaned.uppercased(),
+                sortIndex: sections.count
+            )
+            sections.append(created)
+            activeSectionID = created.id
+            section = created
+        }
+        guard let section else {
+            // The mutation closure always creates a section; keep the fallback
+            // explicit so the return contract remains total if it changes.
+            return CopperSection(title: "UNTITLED", sortIndex: sections.count)
+        }
         return section
     }
 
     public func setActiveSection(_ sectionID: UUID) {
         guard sections.contains(where: { $0.id == sectionID }) else { return }
-        activeSectionID = sectionID
-        save()
+        performPersistentMutation {
+            activeSectionID = sectionID
+        }
     }
 
     public func updateNote(id: UUID, markdown: String) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
         let cleaned = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return }
-        notes[index].markdown = cleaned
-        notes[index].updatedAt = Date()
-        editingID = nil
-        save()
+        performPersistentMutation {
+            notes[index].markdown = cleaned
+            notes[index].updatedAt = Date()
+            editingID = nil
+        }
     }
 
     public func toggleCompleted(_ id: UUID) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
-        notes[index].isCompleted.toggle()
-        notes[index].updatedAt = Date()
-        save()
+        performPersistentMutation {
+            notes[index].isCompleted.toggle()
+            notes[index].updatedAt = Date()
+        }
     }
 
     public func toggleSelection(_ id: UUID) {
+        guard validNoteIDs.contains(id) else { return }
         if selectedIDs.contains(id) {
             selectedIDs.remove(id)
         } else {
@@ -442,33 +628,71 @@ public final class CopperStore: ObservableObject {
     }
 
     public func ensureSelected(_ id: UUID) {
-        if !selectedIDs.contains(id) {
-            selectedIDs = [id]
-        }
+        guard validNoteIDs.contains(id) else { return }
+        if !selectedIDs.contains(id) { selectedIDs = [id] }
     }
 
     public func clearSelection() {
         selectedIDs.removeAll()
     }
 
-    public func markSelectedDone() {
-        for id in selectedIDs {
-            guard let index = notes.firstIndex(where: { $0.id == id }) else { continue }
-            notes[index].isCompleted = true
-            notes[index].updatedAt = Date()
+    public func setFocusedCard(_ id: UUID?) {
+        if let id, !validNoteIDs.contains(id) { return }
+        focusedCardID = id
+    }
+
+    /// Clears the store-backed card state used for selection visuals. The
+    /// caller still owns the actual AppKit/SwiftUI first responder, so this
+    /// does not cancel or rewrite a text editor's undo/focus state.
+    @discardableResult
+    public func handleEscape() -> Bool {
+        let changed = !selectedIDs.isEmpty || focusedCardID != nil
+        selectedIDs.removeAll()
+        focusedCardID = nil
+        return changed
+    }
+
+    public func deleteSelected() {
+        let selectedIDs = selectedIDs.intersection(validNoteIDs)
+        guard !selectedIDs.isEmpty else { return }
+
+        performPersistentMutation {
+            notes.removeAll { selectedIDs.contains($0.id) }
+            self.selectedIDs.removeAll()
+            if let expandedID, selectedIDs.contains(expandedID) {
+                self.expandedID = nil
+            }
+            if let editingID, selectedIDs.contains(editingID) {
+                self.editingID = nil
+            }
+            if let focusedCardID, selectedIDs.contains(focusedCardID) {
+                self.focusedCardID = nil
+            }
         }
-        save()
+    }
+
+    public func markSelectedDone() {
+        let selected = selectedIDs.intersection(validNoteIDs)
+        guard !selected.isEmpty else { return }
+        performPersistentMutation {
+            for id in selected {
+                guard let index = notes.firstIndex(where: { $0.id == id }) else { continue }
+                notes[index].isCompleted = true
+                notes[index].updatedAt = Date()
+            }
+        }
     }
 
     public func toggleSelectedCompletion() {
-        let selected = selectedIDs
+        let selected = selectedIDs.intersection(validNoteIDs)
         guard !selected.isEmpty else { return }
-        for id in selected {
-            guard let index = notes.firstIndex(where: { $0.id == id }) else { continue }
-            notes[index].isCompleted.toggle()
-            notes[index].updatedAt = Date()
+        performPersistentMutation {
+            for id in selected {
+                guard let index = notes.firstIndex(where: { $0.id == id }) else { continue }
+                notes[index].isCompleted.toggle()
+                notes[index].updatedAt = Date()
+            }
         }
-        save()
     }
 
     @discardableResult
@@ -523,27 +747,29 @@ public final class CopperStore: ObservableObject {
     public func mergeSelected() {
         let selected = orderedNotes.filter { selectedIDs.contains($0.id) }
         guard selected.count > 1, let first = selected.first, let firstIndex = notes.firstIndex(where: { $0.id == first.id }) else { return }
-        notes[firstIndex].markdown = selected.map(\.markdown).joined(separator: "\n\n")
-        notes[firstIndex].updatedAt = Date()
-        let removeIDs = Set(selected.dropFirst().map(\.id))
-        notes.removeAll { removeIDs.contains($0.id) }
-        selectedIDs = [first.id]
-        save()
+        performPersistentMutation {
+            notes[firstIndex].markdown = selected.map(\.markdown).joined(separator: "\n\n")
+            notes[firstIndex].updatedAt = Date()
+            let removeIDs = Set(selected.dropFirst().map(\.id))
+            notes.removeAll { removeIDs.contains($0.id) }
+            selectedIDs = [first.id]
+        }
     }
 
     public func moveSelected(to sectionID: UUID) {
         guard sections.contains(where: { $0.id == sectionID }) else { return }
         let nextIndex = notes.filter { $0.sectionID == sectionID }.map(\.sortIndex).max().map { $0 + 1 } ?? 0
         let selectedInDisplayOrder = orderedNotes.filter { selectedIDs.contains($0.id) }
-        for (offset, note) in selectedInDisplayOrder.enumerated() {
-            let id = note.id
-            guard let index = notes.firstIndex(where: { $0.id == id }) else { continue }
-            notes[index].sectionID = sectionID
-            notes[index].sortIndex = nextIndex + offset
-            notes[index].updatedAt = Date()
+        performPersistentMutation {
+            for (offset, note) in selectedInDisplayOrder.enumerated() {
+                let id = note.id
+                guard let index = notes.firstIndex(where: { $0.id == id }) else { continue }
+                notes[index].sectionID = sectionID
+                notes[index].sortIndex = nextIndex + offset
+                notes[index].updatedAt = Date()
+            }
+            activeSectionID = sectionID
         }
-        activeSectionID = sectionID
-        save()
     }
 
     @discardableResult

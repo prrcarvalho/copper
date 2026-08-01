@@ -11,7 +11,7 @@ struct CopperTests {
             .appendingPathComponent("CopperTests-\(name)-\(UUID().uuidString).json")
     }
 
-    @Test("Production panel can accept keyboard focus without becoming main")
+    @Test("Production panel is normal-level, activatable, and keyboard-focusable")
     func productionPanelFocusContract() {
         let panel = CopperPanel(
             contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
@@ -20,7 +20,18 @@ struct CopperTests {
             defer: false
         )
         #expect(panel.canBecomeKey)
-        #expect(!panel.canBecomeMain)
+        #expect(panel.canBecomeMain)
+        #expect(!panel.styleMask.contains(.nonactivatingPanel))
+        #expect(panel.level == .normal)
+        #expect(!panel.isFloatingPanel)
+        #expect(panel.collectionBehavior.isEmpty)
+        #expect(!panel.isMovableByWindowBackground)
+        #expect(CopperWindowLifecycleContract.productionActivationPolicy == .regular)
+        #expect(CopperWindowLifecycleContract.backgroundUITestActivationPolicy == .accessory)
+        #expect(CopperWindowLifecycleContract.productionWindowLevel == .normal)
+        #expect(CopperWindowLifecycleContract.backgroundUITestWindowLevel == .normal)
+        #expect(CopperWindowLifecycleContract.productionCollectionBehavior.isEmpty)
+        #expect(CopperWindowLifecycleContract.backgroundUITestCollectionBehavior.isEmpty)
     }
 
     @Test("Production panel keeps native drag, resize, close and minimize affordances")
@@ -35,17 +46,17 @@ struct CopperTests {
         let constraintsApplied = panel.applyCompanionConstraints(
             to: NSRect(x: 0, y: 0, width: 1440, height: 900)
         )
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
 
         #expect(panel.styleMask.contains(.titled))
         #expect(panel.styleMask.contains(.fullSizeContentView))
-        #expect(panel.styleMask.contains(.nonactivatingPanel))
+        #expect(!panel.styleMask.contains(.nonactivatingPanel))
         #expect(panel.styleMask.contains(.resizable))
         #expect(panel.styleMask.contains(.closable))
         #expect(panel.styleMask.contains(.miniaturizable))
         #expect(panel.isResizable)
         #expect(panel.isMovable)
-        #expect(panel.isMovableByWindowBackground)
+        #expect(!panel.isMovableByWindowBackground)
         #expect(constraintsApplied)
         #expect(panel.minSize == CopperWindowGeometry.minimumSize)
         #expect(panel.maxSize.width == 620)
@@ -156,6 +167,174 @@ struct CopperTests {
         #expect(store.handleCardSpace(noteID: note.id))
         #expect(store.notes.first?.isCompleted == false)
         #expect(!store.handleCardSpace(noteID: UUID()))
+    }
+
+    @Test("Escape clears explicit selection and card focus without making focus selection")
+    func escapeClearsSelectionAndCardFocus() throws {
+        let url = temporaryURL("escape-selection")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let note = try #require(store.addNote(markdown: "focus me", sectionID: section.id))
+        store.ensureSelected(note.id)
+        store.setFocusedCard(note.id)
+
+        #expect(store.handleEscape())
+        #expect(store.selectedIDs.isEmpty)
+        #expect(store.focusedCardID == nil)
+        #expect(!store.handleEscape())
+    }
+
+    @Test("Command deletion is a reversible multi-note transaction")
+    func commandDeletionUndoRedoRestoresDeterministicNotesAndSelection() throws {
+        let url = temporaryURL("delete-undo-redo")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let first = try #require(store.addNote(markdown: "first", sectionID: section.id))
+        let second = try #require(store.addNote(markdown: "second", sectionID: section.id))
+        let originalIDs = store.orderedNotes.map(\.id)
+        let selected = Set([first.id, second.id])
+        store.ensureSelected(first.id)
+        store.toggleSelection(second.id)
+        store.setFocusedCard(second.id)
+        store.expandedID = first.id
+        store.editingID = second.id
+
+        store.deleteSelected()
+
+        #expect(store.notes.isEmpty)
+        #expect(store.selectedIDs.isEmpty)
+        #expect(store.focusedCardID == nil)
+        #expect(store.expandedID == nil)
+        #expect(store.editingID == nil)
+        #expect(store.canUndo)
+        #expect(store.undo())
+        #expect(store.orderedNotes.map(\.id) == originalIDs)
+        #expect(store.selectedIDs == selected)
+        #expect(store.notes.map(\.markdown) == ["first", "second"])
+        #expect(store.focusedCardID == nil)
+
+        let reloaded = CopperStore(fileURL: url, seedIfEmpty: false)
+        #expect(reloaded.orderedNotes.map(\.id) == originalIDs)
+        #expect(reloaded.orderedNotes.map(\.markdown) == ["first", "second"])
+
+        #expect(store.canRedo)
+        #expect(store.redo())
+        #expect(store.notes.isEmpty)
+        #expect(store.selectedIDs.isEmpty)
+        #expect(!store.canRedo)
+    }
+
+    @Test("A divergent persistent action invalidates redo")
+    func divergentActionInvalidatesRedo() throws {
+        let url = temporaryURL("redo-invalidation")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let note = try #require(store.addNote(markdown: "remove me", sectionID: section.id))
+        store.ensureSelected(note.id)
+
+        store.deleteSelected()
+        #expect(store.undo())
+        _ = store.addNote(markdown: "new branch", sectionID: section.id)
+
+        #expect(!store.canRedo)
+        #expect(!store.redo())
+        #expect(store.orderedNotes.map(\.markdown) == ["remove me", "new branch"])
+    }
+
+    @Test("Text first responder keeps delete, undo, and redo on the native text route")
+    func textFirstResponderRouting() {
+        #expect(
+            CopperCommandRouting.destination(for: .plainDelete, firstResponder: .textEditor)
+                == .textEditor
+        )
+        #expect(
+            CopperCommandRouting.destination(for: .commandDelete, firstResponder: .textEditor)
+                == .textEditor
+        )
+        #expect(
+            CopperCommandRouting.destination(for: .undo, firstResponder: .textEditor)
+                == .textEditor
+        )
+        #expect(
+            CopperCommandRouting.destination(for: .redo, firstResponder: .textEditor)
+                == .textEditor
+        )
+        #expect(
+            CopperCommandRouting.destination(for: .escape, firstResponder: .textEditor)
+                == .textEditorAndCopper
+        )
+        #expect(
+            CopperCommandRouting.destination(for: .plainDelete, firstResponder: .other)
+                == .ignored
+        )
+        #expect(
+            CopperCommandRouting.destination(for: .commandDelete, firstResponder: .other)
+                == .copper
+        )
+        #expect(
+            CopperCommandRouting.destination(for: .undo, firstResponder: .other)
+                == .copper
+        )
+        #expect(
+            CopperCommandRouting.destination(for: .redo, firstResponder: .other)
+                == .copper
+        )
+        #expect(
+            CopperCommandRouting.destination(for: .escape, firstResponder: .other)
+                == .copper
+        )
+    }
+
+    @Test("Text-editor Command-Delete routing cannot delete Copper tasks")
+    func textCommandDeleteDoesNotDeleteTasks() throws {
+        let url = temporaryURL("text-command-delete")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let note = try #require(store.addNote(markdown: "keep me", sectionID: section.id))
+        store.ensureSelected(note.id)
+
+        let destination = CopperCommandRouting.destination(
+            for: .commandDelete,
+            firstResponder: .textEditor
+        )
+        if destination == .copper {
+            store.deleteSelected()
+        }
+
+        #expect(destination == .textEditor)
+        #expect(store.notes.map(\.id) == [note.id])
+    }
+
+    @Test("Escape clears Copper card state even while text editing remains the responder")
+    func textEditorEscapeClearsCopperState() throws {
+        let url = temporaryURL("text-escape")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let note = try #require(store.addNote(markdown: "selected", sectionID: section.id))
+        store.ensureSelected(note.id)
+        store.setFocusedCard(note.id)
+
+        let destination = CopperCommandRouting.destination(
+            for: .escape,
+            firstResponder: .textEditor
+        )
+        if destination == .textEditorAndCopper {
+            _ = store.handleEscape()
+        }
+
+        #expect(destination == .textEditorAndCopper)
+        #expect(store.selectedIDs.isEmpty)
+        #expect(store.focusedCardID == nil)
     }
 
     @Test("Capture shortcut validates syntax, safety, conflicts, and reset")

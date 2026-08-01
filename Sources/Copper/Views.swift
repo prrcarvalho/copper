@@ -269,28 +269,33 @@ struct MainPanelView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .top, spacing: 12) {
+        let controlAlignment: VerticalAlignment =
+            CopperComposerLayout.controlVerticalAlignment == .center ? .center : .top
+
+        return HStack(alignment: controlAlignment, spacing: 12) {
             Button {
                 composerFocused = true
             } label: {
                 Image(systemName: "circle")
                     .font(.system(size: 22, weight: .regular))
                     .foregroundStyle(Color.secondary.opacity(0.75))
-                    .frame(width: 24, height: 24)
-                    .padding(.top, 8)
+                    .frame(
+                        width: CopperComposerLayout.controlSize,
+                        height: CopperComposerLayout.controlSize
+                    )
             }
             .buttonStyle(.plain)
             .focusable(true)
             .accessibilityLabel("Focus composer")
 
             TextField(
-                "Add a note or a prompt (development)",
+                CopperComposerLayout.placeholder,
                 text: $draft,
                 axis: .vertical
             )
             .textFieldStyle(.plain)
             .font(.body)
-            .lineLimit(1...5)
+            .lineLimit(CopperComposerLayout.fieldLineLimit)
             .padding(.vertical, 6)
             .focused($composerFocused)
             .onSubmit(commitDraft)
@@ -320,6 +325,7 @@ struct MainPanelView: View {
 struct NoteCard: View {
     let note: CopperNote
     @ObservedObject var store: CopperStore
+    @FocusState private var cardFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiateWithoutColor
     @Environment(\.colorSchemeContrast) private var systemContrast
@@ -401,33 +407,38 @@ struct NoteCard: View {
         .overlay {
             RoundedRectangle(cornerRadius: 19, style: .continuous)
                 .stroke(
-                    isSelected ? Color.accentColor : Color.white.opacity(0.42),
-                    lineWidth: isSelected ? (emphasizeSelectionWithoutColor ? 3 : 2.5) : 1
+                    isSelected
+                        ? Color.accentColor
+                        : (cardFocused ? Color.accentColor.opacity(0.68) : Color.white.opacity(0.42)),
+                    lineWidth: isSelected
+                        ? (emphasizeSelectionWithoutColor ? 3 : 2.5)
+                        : (cardFocused ? 2 : 1)
                 )
         }
         .contentShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
         .onTapGesture { store.toggleSelection(note.id) }
         .focusable(true)
-        .onKeyPress(keys: [.space]) { keyPress in
-            if keyPress.modifiers == [.command] {
-                store.toggleSelection(note.id)
-            } else if keyPress.modifiers.isEmpty {
-                store.handleCardSpace(noteID: note.id)
-            } else {
-                return .ignored
+        .focused($cardFocused)
+        // Keep the card in the keyboard/accessibility focus system, but own
+        // the visual focus ring so Escape can clear card focus independently
+        // from the store-backed selection outline.
+        .focusEffectDisabled()
+        .onChange(of: cardFocused) { _, isFocused in
+            if isFocused {
+                store.setFocusedCard(note.id)
+            } else if store.focusedCardID == note.id {
+                store.setFocusedCard(nil)
             }
-            return .handled
         }
-        .onKeyPress(keys: [.return]) { keyPress in
-            guard keyPress.modifiers.isEmpty || keyPress.modifiers == [.command] else {
-                return .ignored
+        .onChange(of: store.focusedCardID) { _, focusedID in
+            if focusedID != note.id, cardFocused {
+                cardFocused = false
             }
-            _ = store.handleCardReturn(
-                noteID: note.id,
-                openInNewWindow: keyPress.modifiers == [.command]
-            )
-            return .handled
         }
+        .onKeyPress(keys: [.space], action: handleSpaceKey)
+        .onKeyPress(keys: [.delete], action: handleDeleteKey)
+        .onKeyPress(keys: [.escape], action: handleEscapeKey)
+        .onKeyPress(keys: [.return], action: handleReturnKey)
         // The card itself exposes the note label/value and every semantic
         // action. Ignore its visual check/text children so VoiceOver does not
         // announce each note three times in sequence.
@@ -480,6 +491,38 @@ struct NoteCard: View {
         }
         .contextMenu { contextMenu }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isSelected)
+    }
+
+    private func handleSpaceKey(_ keyPress: KeyPress) -> KeyPress.Result {
+        let modifiers = keyPress.modifiers
+        if modifiers == .command {
+            store.toggleSelection(note.id)
+        } else if modifiers.isEmpty {
+            store.handleCardSpace(noteID: note.id)
+        } else {
+            return .ignored
+        }
+        return .handled
+    }
+
+    private func handleDeleteKey(_ keyPress: KeyPress) -> KeyPress.Result {
+        guard keyPress.modifiers == .command else { return .ignored }
+        store.deleteSelected()
+        return .handled
+    }
+
+    private func handleEscapeKey(_ keyPress: KeyPress) -> KeyPress.Result {
+        guard keyPress.modifiers.isEmpty else { return .ignored }
+        _ = store.handleEscape()
+        return .handled
+    }
+
+    private func handleReturnKey(_ keyPress: KeyPress) -> KeyPress.Result {
+        let modifiers = keyPress.modifiers
+        let commandOnly = modifiers == .command
+        guard modifiers.isEmpty || commandOnly else { return .ignored }
+        _ = store.handleCardReturn(noteID: note.id, openInNewWindow: commandOnly)
+        return .handled
     }
 
     @ViewBuilder

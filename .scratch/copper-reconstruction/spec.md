@@ -11,9 +11,10 @@ hidden behaviour.
 
 ## Product requirements
 
-- Keep production as a nonactivating floating `NSPanel` across Spaces. The
-  concrete `CopperPanel` may become key for focused controls without becoming
-  the main window or activating the app.
+- Keep production as a regular, normal-level `CopperPanel`. It may be ordered
+  in front by a capture/show action without activating Copper, but clicking
+  the window, selecting Copper from the Dock, or using Command-Tab activates
+  and focuses it normally; switching to another app moves focus away.
 - Use a regular production activation policy so the personal app has a Dock
   icon and participates in Command-Tab, while background UI-test launches set
   the policy to accessory and use a normal-level `NSWindow`.
@@ -29,6 +30,9 @@ hidden behaviour.
 - Support search, sections, multi-selection, deterministic copy/list output,
   reversible completion, merge, move, inline edit, Expand and a distinct edit
   window.
+- Escape clears explicit task selection and card focus without treating text
+  editor focus as task selection. Command-Delete deletes selected tasks;
+  Command-Z and Command-Shift-Z undo/redo reversible store mutations.
 - Keep the composer visually consistent with note cards, including its leading
   circular control.
 - Persist notes and preferences locally, with no account, sync, telemetry,
@@ -44,9 +48,11 @@ hidden behaviour.
 - Background mode uses a normal-level `NSWindow`, no all-Spaces/full-screen
   collection behaviour, no source-app activation, no Accessibility prompt and
   no global or local keyboard monitor.
-- Production retains the floating panel and one observational global capture
-  monitor. In-app shortcuts use native menu/key handlers; no local event
-  monitor consumes or replaces their events.
+- Production retains one normal-level activatable panel and one observational
+  global capture monitor. In-app shortcuts use native menu/key handlers; no
+  local event monitor consumes or replaces their events. The panel can move
+  only through its narrow header drag strip, not by dragging arbitrary
+  background content.
 - Custom global shortcuts require Command plus another modifier;
   Control-Option is rejected as the VoiceOver modifier. Since the monitor is
   observational, no implementation can guarantee that an accepted combination
@@ -61,7 +67,7 @@ hidden behaviour.
 - `Scripts/BuildApp.sh`, `swift build`, release build and signature validation
   must pass.
 - `swift test` must discover and execute the formal suite, not merely compile a
-  test target. The current suite discovers and executes 21 cases, including
+  test target. The current suite discovers and executes 27 cases, including
   native panel style, geometry and close contracts.
 - Runtime evidence and its limits are recorded only in
   `docs/ux-verification.md`.

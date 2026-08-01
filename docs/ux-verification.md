@@ -16,8 +16,8 @@ Scripts/BuildApp.sh                                      PASS
 Scripts/InstallApp.sh                                    PASS (bundle installed and validated at /Applications/Copper.app)
 swift build                                              PASS
 swift build -c release                                   PASS
-swift test                                                PASS (21 tests executed)
-swift test list                                           PASS (21 tests discovered)
+swift test                                                PASS (27 tests executed)
+swift test list                                           PASS (27 tests discovered)
 swiftc -parse-as-library Sources/CopperCore/Models.swift \
   Scripts/CopperSmoke.swift -o .build/CopperSmoke && \
   .build/CopperSmoke                                        PASS
@@ -36,29 +36,32 @@ Expand/inline-edit/new-window state, attributed AX text conversion and literal
 plain fallback, exactly-one capture ingestion, double-Shift
 deduplication, conflicting-modifier rejection, rejection of source-destructive
 custom combinations, the no-repost invariant, and the production panel's
-key-without-main focus contract.
+normal-level activation/lifecycle contract. The added cases cover explicit
+Escape selection/focus cleanup, text-responder routing for Delete/Undo/Redo,
+multi-note deletion cleanup, persisted undo/redo restoration, redo
+invalidation, and the background/production window policy values.
 
 ## Production companion shell polish
 
-The exact signed production bundle was rebuilt after the shell change and its
-window diagnostic recorded: `activationPolicy=0` (regular),
-`windowClass=CopperPanel`, `styleMaskRawValue=32911` (titled, full-size content,
-nonactivating, resizable, closable and miniaturizable), floating level 3,
-collection behaviour 257 (all Spaces + full-screen auxiliary), hidden close /
-miniaturize / zoom buttons, `isMovable=true`,
-`isMovableByWindowBackground=true`, `isResizable=true`, autosave name
-`CopperCompanionPanel`, `minimumSize=320×420`, `maximumSize=620×914` on the
-current visible frame, and a `320×442` restored frame from the existing saved
-state. The formal geometry case covers the first-launch centered `430×760`
-frame.
-The drag strip's AppKit hit-test class was `CopperDragStripView`.
+The previous 2026-07-31 signed-bundle diagnostic recorded the old floating,
+nonactivating configuration; that report is historical and is superseded by
+this task's normal-window contract. The current source/formal contract is:
+`activationPolicy=0` (regular), `windowClass=CopperPanel`, no
+`.nonactivatingPanel`, normal level, empty collection behaviour,
+`isFloatingPanel=false`, hidden close/miniaturize/zoom buttons,
+`isMovable=true`, `isMovableByWindowBackground=false`, `isResizable=true`,
+autosave name `CopperCompanionPanel`, `320×420` minimum, `620` maximum width,
+and the existing visible-screen geometry limits. The formal geometry case
+covers the first-launch centered `430×760` frame. The drag strip remains an
+AppKit `CopperDragStripView`, and only that narrow header strip moves the
+window.
 
-The installed `/Applications/Copper.app` was exercised with Computer Use:
-`⌘W` hid the only panel without terminating the process, `⌘0` restored it,
-`⌘M` minimised it and a second `⌘0` restored it. Launch Services reopening the
-hidden app showed the same single window. The regular activation policy and
-bundle metadata provide the Dock/Command-Tab identity; a separate physical
-Dock click and Command-Tab gesture were not synthesised by Computer Use.
+The normal AppKit lifecycle is intentionally left in place: the closable and
+miniaturizable style mask routes `⌘W` through `performClose` and `⌘M` through
+the native miniaturize action, while no Copper command claims `⌘Q`, so quit
+remains the standard application command. The regular activation policy gives
+the app Dock/Command-Tab identity. These contracts were verified by formal
+source/model tests; no new foreground physical-key run was performed.
 
 The native edge-resize path is present and the panel's minimum/maximum limits
 are enforced in the exact-bundle diagnostic. A real user pointer drag has since
@@ -77,12 +80,12 @@ Scripts/StopBackgroundUITest.sh
 The debug branch creates a standard `NSWindow` at `NSWindow.Level.normal`,
 with an empty `collectionBehavior`, and calls `orderFront(nil)` followed by
 `NSApp.deactivate()`. It does not call `orderFrontRegardless()`, join all
-Spaces, or join full-screen Spaces. Production remains the original floating
-`NSPanel` path (`.floating`, `.canJoinAllSpaces`, `.fullScreenAuxiliary`, and
-`orderFrontRegardless()`). Current window reports show the test window inactive
-and non-key, and current capture reports show the same frontmost application
-before and after capture; the source-level invariant is also checked in the
-final diff.
+Spaces, or join full-screen Spaces. Production now also uses a normal-level
+`CopperPanel`, empty collection behaviour, and `orderFront(nil)`; a show/order
+operation therefore does not force Copper above the frontmost application.
+Current background reports show the test window inactive and non-key, and
+current capture reports show the same frontmost application before and after
+capture; the source-level invariant is also checked in the final diff.
 
 Background UI-test launches install no global or local keyboard monitor. This is
 the strongest non-interference guard for Computer Use: the test window remains
@@ -123,6 +126,26 @@ source app or asks macOS to foreground an Accessibility permission prompt. The
 selection must already be exposed by the source app's AX tree; otherwise the
 report records that limitation.
 
+## Selection, keyboard history, and current lifecycle contract
+
+The store now owns a reversible transaction seam for persistent mutations. It
+records exact section/note/preference/active-section snapshots and the
+selection context needed by deletion undo; restored and reapplied snapshots
+are written to the same JSON file with original IDs and sort order. Focus,
+`expandedID`, `editingID`, and toast state are not history entries. The current
+coverage includes add/update/delete, completion, merge, move, capture, active
+section, and successful list-copy completion mutations; direct preference field
+edits followed only by `save()` remain outside history.
+
+`Escape` clears `selectedIDs` and the separate `focusedCardID`, including the
+combined text-editor route, while the native text responder may still receive
+`cancelOperation`. Plain Delete is not a Copper command. Command-Delete routes
+to task deletion only outside text editing; with an `NSTextView`/`NSTextField`
+first responder it remains on the native `deleteToBeginningOfLine:` path.
+Command-Z and Command-Shift-Z route to the store only outside text editing and
+to the native text responder otherwise. No physical keys, local/global event
+reposting, or foreground UI run was used for these new checks.
+
 ## Acceptance matrix
 
 | Area | Current evidence | Status |
@@ -130,6 +153,7 @@ report records that limitation.
 | Active section routes composer and capture notes | Formal persistence/routing case; every controlled capture wrote one note to the active section | **PASS (model/runtime diagnostic)** |
 | Search, sections and successive composer notes | Foreground Search filtered to the TOML card; a section was created by its native sheet and became active; the fixed key-capable production panel accepted Composer text + Return and created one note | **PASS (foreground runtime)** |
 | Space and Command-Space | A focused production card changed to selected/completed with Space; Command-Space deselected it without changing completion and selected it again | **PASS (foreground runtime)** |
+| Escape, deletion, undo, and redo | Deterministic formal cases clear explicit selection/card focus, preserve text-editor routing, delete multiple notes with cleanup, persist exact-ID undo/redo, and invalidate redo after a divergent store mutation | **PASS (formal model; no new foreground key run)** |
 | Capture shortcut, conflict validation and reset | Settings rejected an unmodified key, a Copper conflict and Control-Option; Reset restored double Shift; physical default and `Command-Control-Shift-C` gestures both captured successfully | **PASS for the two controlled production gestures; unknown third-party shortcut conflicts remain possible** |
 | Rich conversion and plain fallback | Real TextEdit bold/italic, Safari marker-attributed bold and Chrome AX bold converted to Markdown; real VS Code Electron plain selection captured through the supported AX path; plain fallback also passes formally | **PASS for supported rich/plain runtime paths; fallback when AX exposes no attributed text remains formal-only** |
 | Capture cardinality, selection, clipboard and Copper activation | Background TextEdit/Safari/Chrome plus physical production default/custom TextEdit runs record one note and toast per gesture, preserved selection/clipboard, inactive Copper and unchanged active source app | **PASS (background and production runtime)** |
@@ -143,8 +167,8 @@ report records that limitation.
 | Safari runtime | Real `Example Domain` selection captured as `**Example Domain**` through `attributedTextMarker` | **PASS (rich diagnostic route)** |
 | Chrome runtime | Temporary `example.com` tab exposed `attributedRange`; after AX font/bounds fixes it captured `**Example Domain**` with real selection bounds | **PASS (rich diagnostic route)** |
 | Electron/plain runtime | Real VS Code Electron Untitled editor selection captured exactly one plain note and one `Captured` toast; clipboard and selection were preserved, Copper stayed inactive/non-key and background monitors were zero | **PASS (runtime); no-AX-attributed-text branch remains formal-only** |
-| Spaces/full-screen/multiple monitors | Production `CopperPanel`/`NSPanel` remained visible and AX-addressable after a real `Control-Right` transition; multi-monitor movement was subsequently confirmed on the current bundle | **PASS (full-screen, cross-Space and multi-monitor)** |
-| Production shell, lifecycle and install | Exact-bundle diagnostic proved regular policy, native titled/resizable/closable/miniaturizable mask, hidden traffic lights, floating/all-Spaces/full-screen collection, autosave, `320×420` minimum and `620` maximum width. Installed bundle Computer Use proved `⌘W`, `⌘M`, `⌘0` hide/minimise/restore and Launch Services reopen; icon/codesign/registration checks passed. Real pointer dragging was also confirmed | **PASS** |
+| Spaces/full-screen/multiple monitors | The prior floating build was observed across Spaces and displays; the current accepted normal-level window intentionally has empty collection behaviour and has not been foreground re-run for Space parity | **NOT RE-RUN after lifecycle change** |
+| Production shell, lifecycle and install | Formal/source contracts prove regular activation policy, normal level, activatable `CopperPanel`, native closable/miniaturizable mask, hidden traffic lights, empty collection behaviour, `⌘W`/`⌘M` native affordances, no Copper `⌘Q` override, normal `orderFront(nil)`, and narrow-strip-only dragging. Prior install/signature evidence remains historical | **PASS (formal/source; foreground lifecycle not re-run)** |
 | Visual one-to-one parity | Supplied frames support an approximation of hierarchy, not hidden/internal behaviour | **APPROXIMATION** |
 
 ## Visual comparison register
@@ -197,8 +221,10 @@ clipboard and a non-key toast. No user document was touched. The no-AX-
 attributed-text fallback remains covered by the formal converter test rather
 than being claimed as a separate runtime condition.
 
-The authorised production block then exercised the exact signed floating
-panel. Two physically repeated default double-Shift gestures were intentional,
+The authorised production block then exercised the previous exact signed
+floating panel build. It is retained as historical capture evidence and is not
+evidence for the current normal-level lifecycle. Two physically repeated
+default double-Shift gestures were intentional,
 as confirmed by the user; the cumulative report contains `gestureCount=2` and
 `successCount=2`, while each latest-gesture delta is one note and one toast. A
 single physical `Command-Control-Shift-C` run contains `gestureCount=1`,
@@ -213,7 +239,8 @@ Foreground Computer Use also exercised Search, section creation, sequential
 Composer inserts, multi-selection, Copy as List and its real numbered
 clipboard, completion, Merge, Move, Expand, inline Edit and Edit in New Window.
 The initial borderless panel could display focus but not receive keyboard input;
-the fixed `CopperPanel` can become key without becoming main. After that fix,
+the then-current `CopperPanel` could become key without becoming main. After
+that historical fix,
 Composer + Return, card Space, Command-Space, Return and Command-Return passed,
 and Tab traversed Search, Options, both section headers, all cards, the Composer
 button and its field. Relaunching the same isolated store preserved the active
@@ -315,7 +342,7 @@ current personal reconstruction:
   visuals and settings visuals;
 - exact original Copper behaviour that public evidence cannot establish:
   scroll inertia/virtualisation, section lifecycle, search matching, merge and
-  move semantics, multi-note `Copy` formatting, selection gestures, undo/delete/
+  move semantics, multi-note `Copy` formatting, selection gestures,
   archive/restore, capture behaviour for secure or inaccessible text, rich-text
   conversion rules, launch-at-login, import/export, update handling and
   licensing UX.

@@ -8,7 +8,7 @@
 The observable Copper product is presented as a native Mac app and relies on
 behaviour that crosses application boundaries:
 
-- a floating utility window;
+- a compact companion window with normal macOS activation and focus behaviour;
 - global double-`Shift` detection;
 - selected-text capture from the current application;
 - native contextual menus and keyboard handling;
@@ -57,8 +57,9 @@ unless a later, evidence-backed decision supersedes this ADR.
 
 The first technical spike should prove these risks before broad UI work:
 
-1. Show and restore a floating companion panel without disrupting the source
-   application more than necessary.
+1. Show and restore a normal-level companion panel without disrupting the
+   source application more than necessary, while allowing ordinary click,
+   Dock, Command-Tab, close, minimize, and quit behaviour.
 2. Detect double `Shift` reliably without interfering with ordinary typing.
 3. Read selected text from at least TextEdit, Safari/Chrome and one
    Electron-based AI application through Accessibility APIs.
