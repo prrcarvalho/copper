@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CopperCore
 import SwiftUI
 
@@ -151,15 +152,35 @@ final class CopperPanelContentView: NSView {
 }
 
 struct MainPanelView: View {
+    private enum OptionsAction: CaseIterable, Hashable {
+        case newSection
+        case settings
+        case clearSelection
+
+        var title: String {
+            switch self {
+            case .newSection:
+                return "New Section"
+            case .settings:
+                return "Settings"
+            case .clearSelection:
+                return "Clear Selection"
+            }
+        }
+    }
+
     @ObservedObject var store: CopperStore
     @State private var newSectionTitle = ""
     @State private var isAddingSection = false
     @State private var isShowingSettings = false
+    @State private var isShowingOptions = false
     @State private var draft = ""
     @State private var measuredComposerHeight = CopperComposerLayout.minimumHeight
     @ScaledMetric(relativeTo: .body) private var bodyFontSize = CopperLayout.bodyFontSize
     @ScaledMetric(relativeTo: .caption) private var sectionFontSize = CopperLayout.sectionFontSize
     @ScaledMetric(relativeTo: .body) private var cardControlSize = CopperLayout.cardControlSize
+    @FocusState private var searchFocused: Bool
+    @FocusState private var focusedOptionsAction: OptionsAction?
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.copperForceReduceMotion) private var forceReduceMotion
@@ -220,8 +241,20 @@ struct MainPanelView: View {
                     .padding(.bottom, 122)
                 }
                 .scrollIndicators(.hidden)
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        guard isShowingOptions else { return }
+                        dismissOptionsMenu()
+                    }
+                )
 
                 composer
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            guard isShowingOptions else { return }
+                            dismissOptionsMenu()
+                        }
+                    )
             }
 
             if let toast = store.toast {
@@ -253,7 +286,13 @@ struct MainPanelView: View {
             Text("Group related notes under a short uppercase title.")
         }
         .onExitCommand {
-            _ = store.handleEscape()
+            handleEscape()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .copperEscape)) { _ in
+            handleEscape()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .copperDismissTransientUI)) { _ in
+            dismissOptionsMenu()
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.toast?.id)
     }
@@ -268,32 +307,167 @@ struct MainPanelView: View {
                 TextField("Search", text: $store.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: bodyFontSize))
+                    .focused($searchFocused)
                     .accessibilityLabel("Search notes")
+                    .accessibilityHidden(isShowingOptions)
             }
             .padding(.horizontal, 13)
             .frame(height: CopperLayout.toolbarControlSize)
             .background(Color.white.opacity(0.56), in: Capsule())
+            .overlay {
+                if isShowingOptions {
+                    Button {
+                        dismissOptionsMenu()
+                        DispatchQueue.main.async {
+                            searchFocused = true
+                        }
+                    } label: {
+                        Color.clear
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Search notes")
+                    .accessibilityHint("Closes the Options menu and focuses Search.")
+                }
+            }
 
-            Menu {
-                Button("New Section") { isAddingSection = true }
-                Button("Settings") { isShowingSettings = true }
-                Divider()
-                Button("Clear Selection") { store.clearSelection() }
+            Button {
+                if isShowingOptions {
+                    dismissOptionsMenu()
+                } else {
+                    presentOptionsMenu()
+                }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
             .frame(width: CopperLayout.toolbarControlSize, height: CopperLayout.toolbarControlSize)
             .background(Circle().fill(Color.white.opacity(0.62)))
             .contentShape(Circle())
             .focusable(true)
             .accessibilityLabel("Options")
+            .accessibilityValue(isShowingOptions ? "Expanded" : "Collapsed")
+            .onKeyPress(keys: [.escape]) { keyPress in
+                guard keyPress.modifiers.isEmpty, isShowingOptions else { return .ignored }
+                handleEscape()
+                return .handled
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if isShowingOptions {
+                optionsMenu
+                    .offset(y: CopperLayout.toolbarControlSize + 8)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
+        .zIndex(isShowingOptions ? 1 : 0)
+    }
+
+    private var optionsMenu: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            optionsActionButton(.newSection)
+            optionsActionButton(.settings)
+            Divider()
+            optionsActionButton(.clearSelection)
+        }
+        .buttonStyle(.plain)
+        .frame(width: 160, alignment: .leading)
+        .padding(7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.5), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Options menu")
+        .accessibilityHint("Use Up Arrow and Down Arrow to move between actions. Press Return or Space to activate. Press Escape to close.")
+    }
+
+    private func optionsActionButton(_ action: OptionsAction) -> some View {
+        Button(action.title) {
+            performOptionsAction(action)
+        }
+        .focusable(true)
+        .focused($focusedOptionsAction, equals: action)
+        .onKeyPress(keys: [.upArrow, .downArrow]) { keyPress in
+            handleOptionsNavigation(from: action, keyPress: keyPress)
+        }
+        .onKeyPress(keys: [.return, .space]) { keyPress in
+            guard keyPress.modifiers.isEmpty else { return .ignored }
+            performOptionsAction(action)
+            return .handled
+        }
+        .onKeyPress(keys: [.escape]) { keyPress in
+            guard keyPress.modifiers.isEmpty else { return .ignored }
+            handleEscape()
+            return .handled
+        }
+        .accessibilityLabel(action.title)
+    }
+
+    private func presentOptionsMenu() {
+        store.setFocusedCard(nil)
+        searchFocused = false
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+            isShowingOptions = true
+        }
+        DispatchQueue.main.async {
+            guard isShowingOptions else { return }
+            focusedOptionsAction = .newSection
+        }
+    }
+
+    private func dismissOptionsMenu() {
+        focusedOptionsAction = nil
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+            isShowingOptions = false
+        }
+    }
+
+    private func handleEscape() {
+        if isShowingOptions {
+            dismissOptionsMenu()
+        } else {
+            _ = store.handleEscape()
+        }
+    }
+
+    private func handleOptionsNavigation(from current: OptionsAction, keyPress: KeyPress) -> KeyPress.Result {
+        guard let currentIndex = OptionsAction.allCases.firstIndex(of: current) else {
+            return .ignored
+        }
+
+        let offset: Int
+        switch keyPress.key {
+        case .upArrow:
+            offset = -1
+        case .downArrow:
+            offset = 1
+        default:
+            return .ignored
+        }
+
+        let actions = OptionsAction.allCases
+        let nextIndex = (currentIndex + offset + actions.count) % actions.count
+        focusedOptionsAction = actions[nextIndex]
+        return .handled
+    }
+
+    private func performOptionsAction(_ action: OptionsAction) {
+        dismissOptionsMenu()
+        switch action {
+        case .newSection:
+            isAddingSection = true
+        case .settings:
+            isShowingSettings = true
+        case .clearSelection:
+            store.clearSelection()
+        }
     }
 
     private func sectionView(_ section: CopperSection, notes: [CopperNote]) -> some View {
