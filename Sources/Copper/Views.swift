@@ -39,6 +39,24 @@ enum CopperOptionsInteractionContract {
     }
 }
 
+struct CopperComposerSubmissionResult: Equatable {
+    let draft: String
+    let composerIsFocused: Bool
+}
+
+enum CopperComposerInteractionContract {
+    static func submit(
+        draft: String,
+        save: (String) -> CopperNote?
+    ) -> CopperComposerSubmissionResult {
+        _ = save(draft)
+        return CopperComposerSubmissionResult(
+            draft: "",
+            composerIsFocused: true
+        )
+    }
+}
+
 extension EnvironmentValues {
     var copperForceReduceMotion: Bool {
         get { self[CopperForceReduceMotionKey.self] }
@@ -594,9 +612,11 @@ struct MainPanelView: View {
     }
 
     private func commitDraft() {
-        _ = store.addNote(markdown: draft)
-        draft = ""
-        composerFocused = false
+        let result = CopperComposerInteractionContract.submit(draft: draft) { markdown in
+            store.addNote(markdown: markdown)
+        }
+        draft = result.draft
+        composerFocused = result.composerIsFocused
     }
 }
 

@@ -235,6 +235,22 @@ struct CopperTests {
         #expect(store.visibleNotes(for: queue).isEmpty)
     }
 
+    @Test("Submitting a manual prompt saves it and restores composer focus")
+    func promptSubmissionRestoresComposerFocus() throws {
+        let url = temporaryURL("composer-submit-focus")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let result = CopperComposerInteractionContract.submit(draft: "continue testing") { markdown in
+            store.addNote(markdown: markdown, sectionID: section.id)
+        }
+
+        #expect(store.notes.map(\.markdown) == ["continue testing"])
+        #expect(result.draft.isEmpty)
+        #expect(result.composerIsFocused)
+    }
+
     @Test("Selected completion toggles both directions")
     func selectedCompletionIsReversible() throws {
         let url = temporaryURL("toggle")
