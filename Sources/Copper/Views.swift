@@ -31,6 +31,14 @@ private enum CopperLayout {
     static let cardPadding: CGFloat = 12
 }
 
+enum CopperOptionsInteractionContract {
+    static let focusInteractions: FocusInteractions = .activate
+
+    static func isShowingOptions(afterActivationFrom isShowingOptions: Bool) -> Bool {
+        !isShowingOptions
+    }
+}
+
 extension EnvironmentValues {
     var copperForceReduceMotion: Bool {
         get { self[CopperForceReduceMotionKey.self] }
@@ -180,6 +188,7 @@ struct MainPanelView: View {
     @ScaledMetric(relativeTo: .caption) private var sectionFontSize = CopperLayout.sectionFontSize
     @ScaledMetric(relativeTo: .body) private var cardControlSize = CopperLayout.cardControlSize
     @FocusState private var searchFocused: Bool
+    @FocusState private var optionsButtonFocused: Bool
     @FocusState private var focusedOptionsAction: OptionsAction?
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -332,10 +341,10 @@ struct MainPanelView: View {
             }
 
             Button {
-                if isShowingOptions {
-                    dismissOptionsMenu()
-                } else {
+                if CopperOptionsInteractionContract.isShowingOptions(afterActivationFrom: isShowingOptions) {
                     presentOptionsMenu()
+                } else {
+                    dismissOptionsMenu()
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -346,7 +355,17 @@ struct MainPanelView: View {
             .frame(width: CopperLayout.toolbarControlSize, height: CopperLayout.toolbarControlSize)
             .background(Circle().fill(Color.white.opacity(0.62)))
             .contentShape(Circle())
-            .focusable(true)
+            .focusable(true, interactions: CopperOptionsInteractionContract.focusInteractions)
+            .focused($optionsButtonFocused)
+            .focusEffectDisabled()
+            .overlay {
+                if optionsButtonFocused {
+                    Circle()
+                        .stroke(Color.primary.opacity(0.72), lineWidth: 2)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
             .accessibilityLabel("Options")
             .accessibilityValue(isShowingOptions ? "Expanded" : "Collapsed")
             .onKeyPress(keys: [.escape]) { keyPress in
@@ -392,7 +411,8 @@ struct MainPanelView: View {
         Button(action.title) {
             performOptionsAction(action)
         }
-        .focusable(true)
+        .focusable(true, interactions: CopperOptionsInteractionContract.focusInteractions)
+        .focusEffectDisabled()
         .focused($focusedOptionsAction, equals: action)
         .onKeyPress(keys: [.upArrow, .downArrow]) { keyPress in
             handleOptionsNavigation(from: action, keyPress: keyPress)

@@ -136,7 +136,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 panel.setFrame(CopperWindowGeometry.centeredFrame(in: visibleFrame), display: false)
             }
             panel.contentView = CopperPanelContentView(
-                hostingView: fixedHostingView(MainPanelView(store: store))
+                hostingView: fixedHostingView(
+                    CopperMainPanelHostingView(rootView: MainPanelView(store: store))
+                )
             )
             panel.cancelOperationHandler = {
                 NotificationCenter.default.post(name: .copperEscape, object: nil)
@@ -231,7 +233,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard !backgroundUITest,
               let resignedPanel = notification.object as? CopperPanel,
               resignedPanel === panel else { return }
-        NotificationCenter.default.post(name: .copperDismissTransientUI, object: resignedPanel)
+
+        // A panel key loss can be a transient responder bounce. Wait for
+        // AppKit to settle before deciding whether another Copper window owns
+        // focus or the application actually left the foreground.
+        DispatchQueue.main.async { [weak self, weak resignedPanel] in
+            guard let self,
+                  let resignedPanel,
+                  let currentPanel = self.panel as? CopperPanel,
+                  currentPanel === resignedPanel,
+                  !currentPanel.isKeyWindow else { return }
+
+            let hasDifferentKeyWindow = NSApp.keyWindow.map { $0 !== currentPanel } ?? false
+            guard !currentPanel.isVisible || !NSApp.isActive || hasDifferentKeyWindow else { return }
+            NotificationCenter.default.post(name: .copperDismissTransientUI, object: currentPanel)
+        }
     }
 
     func windowDidChangeScreen(_ notification: Notification) {
@@ -787,8 +803,17 @@ private func makeCaptureToastView(message: String) -> NSView {
 }
 
 @MainActor
+final class CopperMainPanelHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+@MainActor
 private func fixedHostingView<Content: View>(_ rootView: Content) -> NSHostingView<Content> {
-    let hostingView = NSHostingView(rootView: rootView)
+    fixedHostingView(NSHostingView(rootView: rootView))
+}
+
+@MainActor
+private func fixedHostingView<Content: View>(_ hostingView: NSHostingView<Content>) -> NSHostingView<Content> {
     // Copper windows have explicit AppKit frames. Prevent SwiftUI from trying to
     // animate the window size when a note or toast changes its content graph.
     hostingView.sizingOptions = []
