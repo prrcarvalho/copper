@@ -864,8 +864,8 @@ struct CopperCommands: Commands {
             ) { store.toggleSelectedCompletion() }
             Button("Merge Notes") { store.mergeSelected() }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
-            Button("Delete Selected Notes") {
-                route(.commandDelete) { store.deleteSelected() }
+            Button("Delete Selected Notes or Section") {
+                route(.commandDelete) { _ = store.deleteCommandSelection() }
             }
             .keyboardShortcut(.delete, modifiers: [.command])
             Divider()

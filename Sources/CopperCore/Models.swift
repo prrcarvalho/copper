@@ -574,6 +574,42 @@ public final class CopperStore: ObservableObject {
         }
     }
 
+    @discardableResult
+    public func deleteSection(_ sectionID: UUID) -> Bool {
+        guard sections.contains(where: { $0.id == sectionID }) else { return false }
+
+        let orderedSectionsBeforeDeletion = orderedSections
+        guard let sectionIndex = orderedSectionsBeforeDeletion.firstIndex(where: { $0.id == sectionID }) else {
+            return false
+        }
+        let fallbackSectionID: UUID?
+        if sectionIndex + 1 < orderedSectionsBeforeDeletion.count {
+            fallbackSectionID = orderedSectionsBeforeDeletion[sectionIndex + 1].id
+        } else if sectionIndex > 0 {
+            fallbackSectionID = orderedSectionsBeforeDeletion[sectionIndex - 1].id
+        } else {
+            fallbackSectionID = nil
+        }
+        let deletedNoteIDs = Set(notes.filter { $0.sectionID == sectionID }.map(\.id))
+
+        performPersistentMutation {
+            sections.removeAll { $0.id == sectionID }
+            notes.removeAll { $0.sectionID == sectionID }
+            selectedIDs.subtract(deletedNoteIDs)
+
+            if let expandedID, deletedNoteIDs.contains(expandedID) {
+                self.expandedID = nil
+            }
+            if let focusedCardID, deletedNoteIDs.contains(focusedCardID) {
+                self.focusedCardID = nil
+            }
+            if activeSectionID == sectionID {
+                activeSectionID = fallbackSectionID
+            }
+        }
+        return true
+    }
+
     public func updateNote(id: UUID, markdown: String) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
         let cleaned = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -670,6 +706,16 @@ public final class CopperStore: ObservableObject {
                 self.focusedCardID = nil
             }
         }
+    }
+
+    @discardableResult
+    public func deleteCommandSelection() -> Bool {
+        if !selectedIDs.intersection(validNoteIDs).isEmpty {
+            deleteSelected()
+            return true
+        }
+        guard let activeSectionID else { return false }
+        return deleteSection(activeSectionID)
     }
 
     public func markSelectedDone() {

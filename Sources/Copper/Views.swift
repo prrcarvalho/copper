@@ -313,6 +313,11 @@ struct MainPanelView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 10)
             .focusable(true)
+            .onKeyPress(keys: [.delete]) { keyPress in
+                guard keyPress.modifiers == .command else { return .ignored }
+                _ = store.deleteSection(section.id)
+                return .handled
+            }
             .accessibilityAddTraits(.isHeader)
             .accessibilityLabel("Section \(section.title)")
             .accessibilityValue(store.activeSectionID == section.id ? "Active" : "Inactive")

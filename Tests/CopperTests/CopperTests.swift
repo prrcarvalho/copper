@@ -116,6 +116,46 @@ struct CopperTests {
         #expect(reloaded.activeSectionID == second.id)
     }
 
+    @Test("Command deletion removes the active section and all of its prompts")
+    func commandDeletionRemovesActiveSectionAndPrompts() throws {
+        let url = temporaryURL("delete-section")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let first = store.addSection(title: "First")
+        let active = store.addSection(title: "Active")
+        let third = store.addSection(title: "Third")
+        let deletedPrompt = try #require(store.addNote(markdown: "delete me", sectionID: active.id))
+        let retainedPrompt = try #require(store.addNote(markdown: "keep me", sectionID: third.id))
+        store.setActiveSection(active.id)
+        store.setFocusedCard(deletedPrompt.id)
+        store.expandedID = deletedPrompt.id
+
+        #expect(store.deleteCommandSelection())
+        #expect(store.sections.map(\.id) == [first.id, third.id])
+        #expect(store.notes.map(\.id) == [retainedPrompt.id])
+        #expect(store.activeSectionID == third.id)
+        #expect(store.selectedIDs.isEmpty)
+        #expect(store.focusedCardID == nil)
+        #expect(store.expandedID == nil)
+
+        let reloaded = CopperStore(fileURL: url, seedIfEmpty: false)
+        #expect(reloaded.sections.map(\.id) == [first.id, third.id])
+        #expect(reloaded.notes.map(\.markdown) == ["keep me"])
+        #expect(reloaded.activeSectionID == third.id)
+
+        #expect(store.undo())
+        #expect(store.sections.map(\.id) == [first.id, active.id, third.id])
+        #expect(store.notes.map(\.markdown) == ["delete me", "keep me"])
+        #expect(store.activeSectionID == active.id)
+        #expect(store.selectedIDs.isEmpty)
+
+        #expect(store.redo())
+        #expect(store.sections.map(\.id) == [first.id, third.id])
+        #expect(store.notes.map(\.markdown) == ["keep me"])
+        #expect(store.activeSectionID == third.id)
+    }
+
     @Test("Successive prompts remain ordered and search filters their section")
     func successivePromptsAndSearch() throws {
         let url = temporaryURL("successive-search")
