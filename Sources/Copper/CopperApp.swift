@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
 
         if backgroundUITest {
-            let testWindow = NSWindow(
+            let testWindow = CopperBackgroundUITestWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
@@ -138,6 +138,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel.contentView = CopperPanelContentView(
                 hostingView: fixedHostingView(MainPanelView(store: store))
             )
+            panel.cancelOperationHandler = {
+                NotificationCenter.default.post(name: .copperEscape, object: nil)
+            }
             // Assigning the hosting view can reset AppKit's default size
             // limits, so apply the explicit companion contract afterwards.
             constrainProductionPanel(panel)
@@ -189,6 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    func applicationDidResignActive(_ notification: Notification) {
+        guard !backgroundUITest else { return }
+        NotificationCenter.default.post(name: .copperDismissTransientUI, object: panel)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -217,6 +225,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         guard let panel = notification.object as? CopperPanel else { return }
         panelGeometryDidChange(panel, saveFrame: true)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        guard !backgroundUITest,
+              let resignedPanel = notification.object as? CopperPanel,
+              resignedPanel === panel else { return }
+        NotificationCenter.default.post(name: .copperDismissTransientUI, object: resignedPanel)
     }
 
     func windowDidChangeScreen(_ notification: Notification) {
@@ -802,6 +817,15 @@ private extension NSPanel {
 
 extension Notification.Name {
     static let copperShowPanel = Notification.Name("Copper.ShowPanel")
+    static let copperEscape = Notification.Name("Copper.Escape")
+    static let copperDismissTransientUI = Notification.Name("Copper.DismissTransientUI")
+}
+
+@MainActor
+final class CopperBackgroundUITestWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) {
+        NotificationCenter.default.post(name: .copperEscape, object: nil)
+    }
 }
 
 struct CopperCommands: Commands {
@@ -872,7 +896,6 @@ struct CopperCommands: Commands {
             Button("Clear Selection") {
                 route(.escape) { _ = store.handleEscape() }
             }
-                .keyboardShortcut(.escape, modifiers: [])
         }
     }
 
