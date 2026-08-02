@@ -136,7 +136,7 @@ final class CopperPanelContentView: NSView {
         hostingView.frame = bounds
         dragStrip.frame = NSRect(
             x: bounds.minX,
-            y: bounds.maxY - 66,
+            y: bounds.maxY - 8,
             width: bounds.width,
             height: 8
         )
@@ -251,6 +251,9 @@ struct MainPanelView: View {
             }
         } message: {
             Text("Group related notes under a short uppercase title.")
+        }
+        .onExitCommand {
+            _ = store.handleEscape()
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.toast?.id)
     }

@@ -138,6 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel.contentView = CopperPanelContentView(
                 hostingView: fixedHostingView(MainPanelView(store: store))
             )
+            panel.cancelOperationHandler = { [weak self] in
+                guard let self else { return }
+                _ = self.store.handleEscape()
+            }
             // Assigning the hosting view can reset AppKit's default size
             // limits, so apply the explicit companion contract afterwards.
             constrainProductionPanel(panel)
@@ -872,7 +876,6 @@ struct CopperCommands: Commands {
             Button("Clear Selection") {
                 route(.escape) { _ = store.handleEscape() }
             }
-                .keyboardShortcut(.escape, modifiers: [])
         }
     }
 

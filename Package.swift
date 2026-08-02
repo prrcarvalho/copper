@@ -35,6 +35,7 @@ let package = Package(
             name: "CopperTests",
             dependencies: [
                 "CopperCore",
+                "Copper",
                 .product(name: "Testing", package: "swift-testing")
             ],
             path: "Tests/CopperTests",

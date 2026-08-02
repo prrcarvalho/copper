@@ -83,6 +83,12 @@ public final class CopperPanel: NSPanel {
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { true }
 
+    public var cancelOperationHandler: (() -> Void)?
+
+    public override func cancelOperation(_ sender: Any?) {
+        cancelOperationHandler?()
+    }
+
     /// Applies the shared companion geometry contract after AppKit/SwiftUI
     /// layout passes. Returning whether the frame changed keeps the shell's
     /// delegate callbacks small and makes clamping behaviour testable.

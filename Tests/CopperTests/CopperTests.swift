@@ -1,4 +1,5 @@
 import AppKit
+@testable import Copper
 @testable import CopperCore
 import Foundation
 import Testing
@@ -9,6 +10,28 @@ struct CopperTests {
     private func temporaryURL(_ name: String) -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("CopperTests-\(name)-\(UUID().uuidString).json")
+    }
+
+    @Test("Production drag strip stays outside the toolbar click band")
+    func productionDragStripDoesNotCoverToolbar() {
+        let content = CopperPanelContentView(hostingView: NSView())
+        content.setFrameSize(NSSize(width: 320, height: 420))
+        content.layout()
+
+        let dragStrip = content.diagnosticDragStripFrame
+        let toolbarProbe = NSPoint(
+            x: content.bounds.midX,
+            y: content.bounds.maxY - 62
+        )
+        let topDragProbe = NSPoint(
+            x: content.bounds.midX,
+            y: content.bounds.maxY - 4
+        )
+
+        #expect(dragStrip.maxY == content.bounds.maxY)
+        #expect(dragStrip.height == 8)
+        #expect(!(content.hitTest(toolbarProbe) is CopperDragStripView))
+        #expect(content.hitTest(topDragProbe) is CopperDragStripView)
     }
 
     @Test("Production panel is normal-level, activatable, and keyboard-focusable")
@@ -62,6 +85,25 @@ struct CopperTests {
         #expect(panel.maxSize.width == 620)
         #expect(panel.maxSize.height == 876)
         #expect(panel.frame == NSRect(x: 0, y: 0, width: 620, height: 876))
+    }
+
+    @Test("Production Escape cancellation routes to Copper without minimizing")
+    func productionEscapeCancellationRoutesToCopper() {
+        let panel = CopperPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
+            styleMask: CopperPanel.companionStyleMask,
+            backing: .buffered,
+            defer: false
+        )
+        var cancellationCount = 0
+        panel.cancelOperationHandler = { cancellationCount += 1 }
+        panel.orderFront(nil)
+
+        panel.cancelOperation(nil)
+
+        #expect(cancellationCount == 1)
+        #expect(!panel.isMiniaturized)
+        panel.orderOut(nil)
     }
 
     @Test("Companion frame restoration clamps off-screen and oversized frames")
