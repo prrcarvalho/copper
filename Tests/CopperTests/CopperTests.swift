@@ -44,11 +44,64 @@ struct CopperTests {
         #expect(!unrelatedHost.acceptsFirstMouse(for: nil))
     }
 
+    @Test("Options hit target accepts and dispatches one first-mouse click")
+    func optionsFirstMouseHitTargetDispatchesOneClick() throws {
+        let target = CopperOptionsFirstMouseHitTargetView(
+            frame: NSRect(x: 0, y: 0, width: 32, height: 32)
+        )
+        var activationCount = 0
+        target.onActivate = { activationCount += 1 }
+
+        #expect(target.acceptsFirstMouse(for: nil))
+
+        let down = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 16, y: 16),
+            modifierFlags: [],
+            timestamp: 1,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        let up = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: NSPoint(x: 16, y: 16),
+            modifierFlags: [],
+            timestamp: 1.01,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 2,
+            clickCount: 1,
+            pressure: 1
+        ))
+
+        target.mouseDown(with: down)
+        target.mouseUp(with: up)
+
+        #expect(activationCount == 1)
+    }
+
     @Test("Options activation is focus-independent and activation-only")
     func optionsActivationContract() {
         #expect(CopperOptionsInteractionContract.focusInteractions == .activate)
         #expect(CopperOptionsInteractionContract.isShowingOptions(afterActivationFrom: false))
         #expect(!CopperOptionsInteractionContract.isShowingOptions(afterActivationFrom: true))
+    }
+
+    @Test("Closing Options clears Search focus")
+    func optionsDismissalClearsSearchFocus() {
+        #expect(!CopperOptionsInteractionContract.searchFocused(afterOptionsDismissalFrom: true))
+        #expect(!CopperOptionsInteractionContract.searchFocused(afterOptionsDismissalFrom: false))
+
+        var resignCount = 0
+        let nextFocus = CopperOptionsInteractionContract.clearSearchFocus(
+            currentSearchFocused: true,
+            resignFirstResponder: { resignCount += 1 }
+        )
+        #expect(!nextFocus)
+        #expect(resignCount == 1)
     }
 
     @Test("Production panel is normal-level, activatable, and keyboard-focusable")

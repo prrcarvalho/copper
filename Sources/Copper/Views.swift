@@ -37,6 +37,18 @@ enum CopperOptionsInteractionContract {
     static func isShowingOptions(afterActivationFrom isShowingOptions: Bool) -> Bool {
         !isShowingOptions
     }
+
+    static func searchFocused(afterOptionsDismissalFrom _: Bool) -> Bool {
+        false
+    }
+
+    static func clearSearchFocus(
+        currentSearchFocused _: Bool,
+        resignFirstResponder: () -> Void
+    ) -> Bool {
+        resignFirstResponder()
+        return false
+    }
 }
 
 struct CopperComposerSubmissionResult: Equatable {
@@ -130,6 +142,61 @@ final class CopperDragStripView: NSView {
     }
 
     override var isOpaque: Bool { false }
+}
+
+/// AppKit hit target for the Options control in the production panel.
+///
+/// A regular-level window sends the first pointer event only when the actual
+/// hit-tested view accepts it. `NSHostingView` opts in at the root, but the
+/// nested SwiftUI button target can still reject that event while Copper is
+/// inactive. This transparent target is scoped to the Options button and
+/// forwards one native pointer click to SwiftUI after the mouse-up, preserving
+/// the normal activation policy and the button's existing accessibility node.
+@MainActor
+final class CopperOptionsFirstMouseHitTargetView: NSView {
+    var onActivate: (() -> Void)?
+    private var pointerDownLocation: NSPoint?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        pointerDownLocation = convert(event.locationInWindow, from: nil)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let pointerDownLocation else { return }
+        self.pointerDownLocation = nil
+        let pointerUpLocation = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(pointerDownLocation), bounds.contains(pointerUpLocation) else {
+            return
+        }
+        onActivate?()
+    }
+}
+
+@MainActor
+struct CopperOptionsFirstMouseHitTarget: NSViewRepresentable {
+    let onActivate: () -> Void
+
+    func makeNSView(context: Context) -> CopperOptionsFirstMouseHitTargetView {
+        let view = CopperOptionsFirstMouseHitTargetView(frame: .zero)
+        view.onActivate = onActivate
+        return view
+    }
+
+    func updateNSView(_ nsView: CopperOptionsFirstMouseHitTargetView, context: Context) {
+        nsView.onActivate = onActivate
+    }
 }
 
 /// AppKit wrapper used by the production panel. Keeping the transparent drag
@@ -359,11 +426,7 @@ struct MainPanelView: View {
             }
 
             Button {
-                if CopperOptionsInteractionContract.isShowingOptions(afterActivationFrom: isShowingOptions) {
-                    presentOptionsMenu()
-                } else {
-                    dismissOptionsMenu()
-                }
+                activateOptions()
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 15, weight: .semibold))
@@ -373,6 +436,12 @@ struct MainPanelView: View {
             .frame(width: CopperLayout.toolbarControlSize, height: CopperLayout.toolbarControlSize)
             .background(Circle().fill(Color.white.opacity(0.62)))
             .contentShape(Circle())
+            .overlay {
+                CopperOptionsFirstMouseHitTarget {
+                    activateOptions()
+                }
+                .accessibilityHidden(true)
+            }
             .focusable(true, interactions: CopperOptionsInteractionContract.focusInteractions)
             .focused($optionsButtonFocused)
             .focusEffectDisabled()
@@ -425,6 +494,14 @@ struct MainPanelView: View {
         .accessibilityHint("Use Up Arrow and Down Arrow to move between actions. Press Return or Space to activate. Press Escape to close.")
     }
 
+    private func activateOptions() {
+        if CopperOptionsInteractionContract.isShowingOptions(afterActivationFrom: isShowingOptions) {
+            presentOptionsMenu()
+        } else {
+            dismissOptionsMenu()
+        }
+    }
+
     private func optionsActionButton(_ action: OptionsAction) -> some View {
         Button(action.title) {
             performOptionsAction(action)
@@ -450,7 +527,7 @@ struct MainPanelView: View {
 
     private func presentOptionsMenu() {
         store.setFocusedCard(nil)
-        searchFocused = false
+        clearSearchFocus()
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
             isShowingOptions = true
         }
@@ -462,9 +539,19 @@ struct MainPanelView: View {
 
     private func dismissOptionsMenu() {
         focusedOptionsAction = nil
+        clearSearchFocus()
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
             isShowingOptions = false
         }
+    }
+
+    private func clearSearchFocus() {
+        searchFocused = CopperOptionsInteractionContract.clearSearchFocus(
+            currentSearchFocused: searchFocused,
+            resignFirstResponder: {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+            }
+        )
     }
 
     private func handleEscape() {
