@@ -2,6 +2,7 @@ import AppKit
 @testable import Copper
 @testable import CopperCore
 import Foundation
+import SwiftUI
 import Testing
 
 @Suite("Copper domain and capture", .serialized)
@@ -32,6 +33,22 @@ struct CopperTests {
         #expect(dragStrip.height == 8)
         #expect(!(content.hitTest(toolbarProbe) is CopperDragStripView))
         #expect(content.hitTest(topDragProbe) is CopperDragStripView)
+    }
+
+    @Test("Production main-panel hosting view accepts its first mouse")
+    func productionMainPanelHostingViewAcceptsFirstMouse() {
+        let productionHost = CopperMainPanelHostingView(rootView: EmptyView())
+        let unrelatedHost = NSHostingView(rootView: EmptyView())
+
+        #expect(productionHost.acceptsFirstMouse(for: nil))
+        #expect(!unrelatedHost.acceptsFirstMouse(for: nil))
+    }
+
+    @Test("Options activation is focus-independent and activation-only")
+    func optionsActivationContract() {
+        #expect(CopperOptionsInteractionContract.focusInteractions == .activate)
+        #expect(CopperOptionsInteractionContract.isShowingOptions(afterActivationFrom: false))
+        #expect(!CopperOptionsInteractionContract.isShowingOptions(afterActivationFrom: true))
     }
 
     @Test("Production panel is normal-level, activatable, and keyboard-focusable")
