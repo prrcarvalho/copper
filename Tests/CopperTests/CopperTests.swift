@@ -295,13 +295,43 @@ struct CopperTests {
 
         let store = CopperStore(fileURL: url, seedIfEmpty: false)
         let section = store.addSection(title: "Queue")
-        let result = CopperComposerInteractionContract.submit(draft: "continue testing") { markdown in
-            store.addNote(markdown: markdown, sectionID: section.id)
-        }
+        let result = CopperComposerInteractionContract.submit(
+            draft: "continue testing",
+            save: { markdown in store.addNote(markdown: markdown, sectionID: section.id) },
+            createSection: { title in store.addSection(title: title) }
+        )
 
         #expect(store.notes.map(\.markdown) == ["continue testing"])
         #expect(result.draft.isEmpty)
         #expect(result.composerIsFocused)
+    }
+
+    @Test("Composer section command creates a section instead of a note")
+    func composerSectionCommandCreatesSection() throws {
+        let url = temporaryURL("composer-section-command")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let result = CopperComposerInteractionContract.submit(
+            draft: "# Research ideas",
+            save: { markdown in store.addNote(markdown: markdown) },
+            createSection: { title in store.addSection(title: title) }
+        )
+
+        #expect(store.sections.map(\.title) == ["RESEARCH IDEAS"])
+        #expect(store.notes.isEmpty)
+        #expect(store.activeSectionID == store.sections.first?.id)
+        #expect(result.draft.isEmpty)
+        #expect(result.composerIsFocused)
+    }
+
+    @Test("Composer only recognises a non-empty single-line hash heading")
+    func composerSectionCommandParsing() {
+        #expect(CopperComposerInteractionContract.sectionTitle(from: "# Research") == "Research")
+        #expect(CopperComposerInteractionContract.sectionTitle(from: "  # Research  ") == "Research")
+        #expect(CopperComposerInteractionContract.sectionTitle(from: "# ") == nil)
+        #expect(CopperComposerInteractionContract.sectionTitle(from: "## Research") == nil)
+        #expect(CopperComposerInteractionContract.sectionTitle(from: "# Research\nMore") == nil)
     }
 
     @Test("Selected completion toggles both directions")
@@ -434,6 +464,20 @@ struct CopperTests {
                 == .textEditor
         )
         #expect(
+            CopperCommandRouting.destination(
+                for: .undo,
+                firstResponder: .textEditor,
+                copperUndoPreferred: true
+            ) == .copper
+        )
+        #expect(
+            CopperCommandRouting.destination(
+                for: .redo,
+                firstResponder: .textEditor,
+                copperUndoPreferred: true
+            ) == .copper
+        )
+        #expect(
             CopperCommandRouting.destination(for: .escape, firstResponder: .textEditor)
                 == .textEditorAndCopper
         )
@@ -457,6 +501,31 @@ struct CopperTests {
             CopperCommandRouting.destination(for: .escape, firstResponder: .other)
                 == .copper
         )
+    }
+
+    @Test("A just-completed Copper action wins undo routing while the composer remains focused")
+    func copperActionWinsUndoRoutingFromTextEditor() throws {
+        let url = temporaryURL("composer-undo-routing")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        let section = store.addSection(title: "Queue")
+        let note = try #require(store.addNote(markdown: "created from composer", sectionID: section.id))
+
+        let destination = CopperCommandRouting.destination(
+            for: .undo,
+            firstResponder: .textEditor,
+            copperUndoPreferred: store.copperUndoPreferred && store.canUndo
+        )
+        #expect(destination == .copper)
+
+        if destination == .copper {
+            #expect(store.undo())
+        }
+        #expect(store.notes.isEmpty)
+        #expect(store.canRedo)
+        #expect(store.copperUndoPreferred)
+        #expect(note.sectionID == section.id)
     }
 
     @Test("Text-editor Command-Delete routing cannot delete Copper tasks")

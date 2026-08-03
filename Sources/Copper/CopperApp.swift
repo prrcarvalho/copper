@@ -937,7 +937,21 @@ struct CopperCommands: Commands {
     }
 
     private func route(_ command: CopperKeyCommand, copperAction: () -> Void) {
-        switch CopperCommandRouting.destination(for: command, firstResponder: firstResponderKind) {
+        let copperUndoPreferred: Bool
+        switch command {
+        case .undo:
+            copperUndoPreferred = store.copperUndoPreferred && store.canUndo
+        case .redo:
+            copperUndoPreferred = store.copperUndoPreferred && store.canRedo
+        default:
+            copperUndoPreferred = false
+        }
+
+        switch CopperCommandRouting.destination(
+            for: command,
+            firstResponder: firstResponderKind,
+            copperUndoPreferred: copperUndoPreferred
+        ) {
         case .copper:
             copperAction()
         case .ignored:

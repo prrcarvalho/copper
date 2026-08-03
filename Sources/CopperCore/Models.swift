@@ -347,11 +347,15 @@ public enum CopperCommandDestination: Equatable {
 public enum CopperCommandRouting {
     public static func destination(
         for command: CopperKeyCommand,
-        firstResponder: CopperFirstResponderKind
+        firstResponder: CopperFirstResponderKind,
+        copperUndoPreferred: Bool = false
     ) -> CopperCommandDestination {
         if firstResponder == .textEditor {
             switch command {
             case .plainDelete, .commandDelete, .undo, .redo:
+                if (command == .undo || command == .redo), copperUndoPreferred {
+                    return .copper
+                }
                 return .textEditor
             case .escape:
                 return .textEditorAndCopper
@@ -398,6 +402,7 @@ public final class CopperStore: ObservableObject {
     @Published public private(set) var selectedIDs: Set<UUID> = []
     @Published public private(set) var focusedCardID: UUID? = nil
     @Published public private(set) var activeSectionID: UUID? = nil
+    @Published public private(set) var copperUndoPreferred = false
     @Published public var expandedID: UUID? = nil
     @Published public var toast: CopperToast?
 
@@ -485,6 +490,7 @@ public final class CopperStore: ObservableObject {
         let after = persistentState
         guard before != after else { return }
 
+        copperUndoPreferred = true
         undoStack.append(HistoryEntry(
             before: before,
             after: after,
@@ -504,10 +510,15 @@ public final class CopperStore: ObservableObject {
         if let expandedID, !validNoteIDs.contains(expandedID) {
             self.expandedID = nil
         }
+        copperUndoPreferred = true
         // Focus is a live AppKit/SwiftUI concern, not part of an undo entry.
         // Clearing it also prevents an old focus ring from surviving a restore.
         focusedCardID = nil
         save()
+    }
+
+    public func clearCopperUndoPreference() {
+        copperUndoPreferred = false
     }
 
     @discardableResult

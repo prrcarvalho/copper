@@ -57,11 +57,31 @@ struct CopperComposerSubmissionResult: Equatable {
 }
 
 enum CopperComposerInteractionContract {
+    static func sectionTitle(from draft: String) -> String? {
+        let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedDraft.isEmpty,
+              !trimmedDraft.contains(where: \.isNewline),
+              trimmedDraft.first == "#" else {
+            return nil
+        }
+
+        let remainder = trimmedDraft.dropFirst()
+        guard remainder.first?.isWhitespace == true else { return nil }
+
+        let title = remainder.trimmingCharacters(in: .whitespaces)
+        return title.isEmpty ? nil : title
+    }
+
     static func submit(
         draft: String,
-        save: (String) -> CopperNote?
+        save: (String) -> CopperNote?,
+        createSection: (String) -> CopperSection
     ) -> CopperComposerSubmissionResult {
-        _ = save(draft)
+        if let title = sectionTitle(from: draft) {
+            _ = createSection(title)
+        } else {
+            _ = save(draft)
+        }
         return CopperComposerSubmissionResult(
             draft: "",
             composerIsFocused: true
@@ -402,6 +422,9 @@ struct MainPanelView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: bodyFontSize))
                     .focused($searchFocused)
+                    .onChange(of: store.searchText) { _, _ in
+                        store.clearCopperUndoPreference()
+                    }
                     .accessibilityLabel("Search notes")
                     .accessibilityHidden(isShowingOptions)
             }
@@ -669,6 +692,11 @@ struct MainPanelView: View {
                 }
                 .focused($composerFocused)
                 .onSubmit(commitDraft)
+                .onChange(of: draft) { _, newDraft in
+                    if !newDraft.isEmpty {
+                        store.clearCopperUndoPreference()
+                    }
+                }
                 .accessibilityLabel("Add a note or a prompt")
                 .accessibilityAction(named: "Add note") { commitDraft() }
             }
@@ -699,9 +727,11 @@ struct MainPanelView: View {
     }
 
     private func commitDraft() {
-        let result = CopperComposerInteractionContract.submit(draft: draft) { markdown in
-            store.addNote(markdown: markdown)
-        }
+        let result = CopperComposerInteractionContract.submit(
+            draft: draft,
+            save: { markdown in store.addNote(markdown: markdown) },
+            createSection: { title in store.addSection(title: title) }
+        )
         draft = result.draft
         composerFocused = result.composerIsFocused
     }
@@ -983,6 +1013,9 @@ struct NoteDetailPopup: View {
                 }
                 .scrollIndicators(.automatic)
                 .focused($editorFocused)
+                .onChange(of: draft) { _, _ in
+                    store.clearCopperUndoPreference()
+                }
                 .accessibilityLabel("Full prompt content")
 
             HStack(spacing: 8) {
@@ -1125,6 +1158,9 @@ struct EditorView: View {
                 .padding(10)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.secondary.opacity(0.25)))
+                .onChange(of: draft) { _, _ in
+                    store.clearCopperUndoPreference()
+                }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
