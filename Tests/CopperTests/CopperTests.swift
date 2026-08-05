@@ -279,6 +279,25 @@ struct CopperTests {
         #expect(reloaded.activeSectionID == second.id)
     }
 
+    @Test("Empty production store stays empty after restart")
+    func emptyProductionStoreStaysEmptyAfterRestart() {
+        let url = temporaryURL("empty-production-store")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let seededTestStore = CopperStore(fileURL: url, seedIfEmpty: true)
+        #expect(!seededTestStore.notes.isEmpty)
+
+        for section in seededTestStore.orderedSections {
+            #expect(seededTestStore.deleteSection(section.id))
+        }
+        #expect(seededTestStore.sections.isEmpty)
+        #expect(seededTestStore.notes.isEmpty)
+
+        let reloadedProductionStore = CopperStore(fileURL: url)
+        #expect(reloadedProductionStore.sections.isEmpty)
+        #expect(reloadedProductionStore.notes.isEmpty)
+    }
+
     @Test("Command deletion removes the active section and all of its prompts")
     func commandDeletionRemovesActiveSectionAndPrompts() throws {
         let url = temporaryURL("delete-section")

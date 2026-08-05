@@ -179,7 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         if let storePath = arguments.first(where: { $0.hasPrefix("--store-path=") }) {
             let path = String(storePath.dropFirst("--store-path=".count))
-            self.store = CopperStore(fileURL: URL(fileURLWithPath: path), seedIfEmpty: true)
+            self.store = CopperStore(fileURL: URL(fileURLWithPath: path), seedIfEmpty: backgroundUITest)
         } else {
             self.store = CopperStore()
         }

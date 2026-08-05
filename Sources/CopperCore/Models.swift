@@ -465,7 +465,7 @@ public final class CopperStore: ObservableObject {
     private var undoStack: [HistoryEntry] = []
     private var redoStack: [HistoryEntry] = []
 
-    public init(fileURL: URL? = nil, seedIfEmpty: Bool = true) {
+    public init(fileURL: URL? = nil, seedIfEmpty: Bool = false) {
         if let fileURL {
             self.fileURL = fileURL
         } else {
