@@ -52,6 +52,27 @@ public enum CopperWindowGeometry {
     }
 }
 
+/// Shared placement contract for the transient capture confirmation.
+///
+/// The toast is deliberately a stable lower-centre affordance rather than a
+/// selection-relative bubble. This keeps it predictable when Accessibility
+/// exposes text without reliable screen bounds and matches the reference
+/// interaction shown by the companion apps.
+public enum CopperCaptureToastGeometry {
+    public static let bottomInset: CGFloat = 24
+
+    public static func frame(in visibleFrame: NSRect, size: NSSize) -> NSRect {
+        let width = min(max(size.width, 0), max(visibleFrame.width, 0))
+        let height = min(max(size.height, 0), max(visibleFrame.height, 0))
+        let x = visibleFrame.midX - width / 2
+        let y = min(
+            max(visibleFrame.minY + bottomInset, visibleFrame.minY),
+            visibleFrame.maxY - height
+        )
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+}
+
 /// A titled companion panel uses the normal AppKit window level so it behaves
 /// like an ordinary macOS window when the user clicks it, selects Copper from
 /// the Dock, or switches to it with Command-Tab. The production shell hides

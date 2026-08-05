@@ -2,6 +2,11 @@
 
 Date: 2026-08-01
 
+Update (2026-08-05): the capture confirmation is now a fixed lower-centre
+toast on the active display, matching the requested Whispr-style placement.
+Selection bounds remain available in diagnostics but no longer position the
+toast.
+
 Update (2026-08-03): the source/formal contract now adds a persisted **Always
 on Top** setting. It switches the production panel between `.normal` and
 `.floating` level without activation, keying, forced ordering, or Spaces
@@ -177,7 +182,7 @@ reposting, or foreground UI run was used for these new checks.
 | Capture shortcut, conflict validation and reset | Settings rejected an unmodified key, a Copper conflict and Control-Option; Reset restored double Shift; physical default and `Command-Control-Shift-C` gestures both captured successfully | **PASS for the two controlled production gestures; unknown third-party shortcut conflicts remain possible** |
 | Rich conversion and plain fallback | Real TextEdit bold/italic, Safari marker-attributed bold and Chrome AX bold converted to Markdown; real VS Code Electron plain selection captured through the supported AX path; plain fallback also passes formally | **PASS for supported rich/plain runtime paths; fallback when AX exposes no attributed text remains formal-only** |
 | Capture cardinality, selection, clipboard and Copper activation | Background TextEdit/Safari/Chrome plus physical production default/custom TextEdit runs record one note and toast per gesture, preserved selection/clipboard, inactive Copper and unchanged active source app | **PASS (background and production runtime)** |
-| Capture toast position/nonactivation | TextEdit, Safari and fixed Chrome reports contain non-empty selection bounds; the 128 × 38 toast starts 12 points below the selection in top-left screen coordinates, is visible and never key | **PASS (background diagnostic route)** |
+| Capture toast position/nonactivation | The 128 × 38 toast is centred horizontally and sits 24 points above the visible bottom edge of the active display; it is visible and never key. Selection bounds remain diagnostic data only | **PASS (geometry test; runtime visual check pending)** |
 | Copy, Copy as List, completion, Merge and Move | In the final exact bundle, focused `Command-C` copied one selected card without completing it and exposed one `Copied` toast; focused `Shift-Command-C` emitted two notes in visual order as a numbered list, completed both and exposed one `Copied as List` toast. Settings then persisted custom Copy `Command-Shift-K`, which copied once; real Search-field selections still used native `Command-C` before and after customisation. Merge and Move also ran in the visible UI | **PASS (foreground runtime)** |
 | Prompt popup and Edit in New Window | The 2026-08-01 background Computer Use run opened the full prompt with double-click and Return; the popup exposed a scrollable text editor, Save, Cancel and Close. Escape closed it and returned to the panel without the selection. Command-Return remains covered by the model/key-routing contract; no new foreground run was made after this integration | **PASS (background popup run; Command-Return formal/source)** |
 | Composer and core visual hierarchy | The 2026-08-01 background run showed a compact short composer with no visible scrollbar; a multiline value grew naturally and exposed a scrollbar only after overflow. Search, headers, cards, circles, spacing and the card-like composer remain an evidence-based visual approximation | **PASS for observed composer states; approximation for exact pixels** |
@@ -209,7 +214,7 @@ context-menu, completion and toast states.
 | Scroll behaviour/indicators | The public evidence does not establish inertia, virtualisation or persistent indicator rules; the main reconstruction hides persistent indicators. | **Unknown exact behaviour** |
 | Selected/completed cards | Foreground multi-selection showed two blue outlines; Copy as List then showed blue checks and strikethrough. | **Observed approximation** |
 | Context menu | The current source exposes Copy, Copy as List, Mark as Done, Open, Edit in New Window, Merge Notes and Move to; the new background AX tree exposed Open and Edit in New Window on each card. | **Observed action inventory; exact visual parity unknown** |
-| Capture toast | Current TextEdit/Safari/Chrome reports plus live Computer Use observation show the dark non-key capsule next to the real selection. | **PASS as observed approximation** |
+| Capture toast | The dark non-key capsule is fixed at the lower centre of the active display, matching the requested Whispr-style placement. | **PASS as geometry approximation; final runtime visual check pending** |
 | Copy toast | The foreground Copy as List screenshot and AX tree show the light `Copied as List` toast exactly once. | **Observed approximation** |
 | Settings | Unsafe/conflict/reset/custom flows were exercised in the native sheet; the public frames do not expose an exact reference design. | **Runtime PASS; visual parity unknown from public evidence** |
 

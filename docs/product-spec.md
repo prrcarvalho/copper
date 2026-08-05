@@ -105,7 +105,7 @@ The core workflow is:
 
 1. User highlights a passage in the active source application. **[V]**
 2. User presses `Shift` twice. **[P][V]**
-3. A small dark toast reading `Captured` appears close to the source content. **[V]**
+3. A small dark toast reading `Captured` appears at the lower centre of the active display. **[V]**
 4. The selected passage is added as a card in Copper. **[V]**
 5. Rich text/Markdown emphasis from the source is visibly preserved in the card preview. **[V]**
 6. The workflow is demonstrated repeatedly without manually focusing Copper first. **[V]**
@@ -220,7 +220,7 @@ Observed properties:
 
 Two distinct toast treatments are shown:
 
-- **Capture toast:** small black capsule with white `Captured` text, displayed over the source application. **[V]**
+- **Capture toast:** small black capsule with white `Captured` text, displayed at the lower centre of the active display. **[V]**
 - **Copy toast:** small light capsule with a dark icon and `Copied as List`, displayed near the selected cards. **[V]**
 
 ### 5.8 Context menu
@@ -592,7 +592,7 @@ The current reconstruction implements active-section routing and persistence,
 search/sections, deterministic multi-note operations, reversible completion,
 configurable capture parsing/conflict/reset, Accessibility attributed-text
 conversion with Markdown-escaped literal plain fallback, a nonactivating
-selection-positioned toast,
+lower-centre capture toast,
 full-prompt popup editing with double-click/Return opening and a distinct
 Command-Return editor window, a card-like composer,
 accessibility render paths and local-only persistence. Production defaults to
@@ -614,7 +614,7 @@ Safari and Chrome. Every final report records exactly one new note, exactly one
 `Captured` toast, a preserved source selection, unchanged clipboard, inactive
 Copper, unchanged frontmost app and zero test-mode monitors. Chrome's first run
 exposed an AX font/bounds defect; the repeated fixed run produced bold Markdown
-and a valid selection-relative toast frame. The exact signed bundle passed TCC,
+and the fixed lower-centre toast geometry. The exact signed bundle passed TCC,
 codesign, debug/release build, packaging, smoke, script syntax and diff checks.
 A source/binary/entitlements/socket audit found no native-app network,
 analytics, telemetry, crash-upload, sync or note-content upload path.

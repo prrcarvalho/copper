@@ -223,6 +223,21 @@ struct CopperTests {
         #expect(restored.maxY == visible.minY + 876)
     }
 
+    @Test("Capture toast is centred near the bottom of the active display")
+    func captureToastUsesLowerCentrePlacement() {
+        let visible = NSRect(x: 120, y: 80, width: 1440, height: 820)
+        let toastSize = NSSize(width: 128, height: 38)
+
+        let frame = CopperCaptureToastGeometry.frame(
+            in: visible,
+            size: toastSize
+        )
+
+        #expect(frame.midX == visible.midX)
+        #expect(frame.minY == visible.minY + CopperCaptureToastGeometry.bottomInset)
+        #expect(frame.maxY < visible.maxY)
+    }
+
     @Test("Companion minimum is compact while preserving a scrollable queue and composer")
     func companionMinimumSizeIsCompact() {
         #expect(CopperWindowGeometry.minimumSize.width == 300)

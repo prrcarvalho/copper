@@ -503,9 +503,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Let the list's Published update finish its AppKit constraint pass before
         // updating the separate toast hosting view. This avoids a SwiftUI/AppKit
         // constraint assertion when capture and toast creation happen together.
-        let sourceFrame = selected.sourceFrame
         DispatchQueue.main.async { [weak self] in
-            self?.captureToastController?.show(message: "Captured", sourceFrame: sourceFrame)
+            self?.captureToastController?.show(message: "Captured")
         }
         return (selected, note)
     }
@@ -935,7 +934,7 @@ final class CaptureToastController {
         ]
     }
 
-    func show(message: String, sourceFrame: NSRect?) {
+    func show(message: String) {
         dismissalTask?.cancel()
         presentationCount += 1
         lastMessage = message
@@ -965,7 +964,7 @@ final class CaptureToastController {
             panel = toastPanel
         }
 
-        toastPanel.setFrame(positionedNear: sourceFrame, size: toastSize)
+        toastPanel.setFrame(atLowerCentre: toastSize)
         // orderFront does not activate the app or make the panel key.
         toastPanel.orderFront(nil)
         dismissalTask = Task { @MainActor [weak self] in
@@ -1030,22 +1029,13 @@ private func fixedHostingView<Content: View>(_ hostingView: NSHostingView<Conten
 }
 
 private extension NSPanel {
-    func setFrame(positionedNear sourceFrame: NSRect?, size: NSSize) {
-        let fallbackScreen = NSScreen.main ?? NSScreen.screens.first
-        let sourcePoint = sourceFrame.map { NSPoint(x: $0.minX, y: $0.minY) }
-        let screen = sourcePoint.flatMap { point in
-            NSScreen.screens.first(where: { $0.frame.contains(point) })
-        } ?? fallbackScreen
+    func setFrame(atLowerCentre size: NSSize) {
+        let mouseLocation = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) })
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let x = min(max(sourceFrame?.minX ?? visible.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8)
-        // Accessibility coordinates have a top-left origin; AppKit uses bottom-left.
-        let y: CGFloat
-        if let sourceFrame, let screen {
-            y = screen.frame.maxY - sourceFrame.maxY - size.height - 12
-        } else {
-            y = visible.maxY - size.height - 24
-        }
-        setFrame(NSRect(x: x, y: max(visible.minY + 8, y), width: size.width, height: size.height), display: true)
+        setFrame(CopperCaptureToastGeometry.frame(in: visible, size: size), display: true)
     }
 }
 
