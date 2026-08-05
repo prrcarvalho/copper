@@ -24,9 +24,11 @@ The app is local-first and runs from a floating companion panel; the tested
 bundle is built at `.build/Copper.app` and can be installed at
 `/Applications/Copper.app`.
 
-Production uses a regular macOS activation policy and a normal-level
-`CopperPanel`, so Copper has a Dock icon and appears in Command-Tab. Its native
-shell is draggable and resizable (`320×420` minimum, `430×760` first-launch
+Production uses a regular macOS activation policy and defaults to a normal-level
+`CopperPanel`, so Copper has a Dock icon and appears in Command-Tab. Settings
+includes an **Always on Top** toggle that moves the panel to AppKit's floating
+level without activating Copper or changing its Spaces behaviour. Its native
+shell is draggable and resizable (`300×360` minimum, `430×760` first-launch
 size, `620` maximum width) and restores its frame between launches. The
 standard traffic lights remain hidden to match the public reference; `⌘W`,
 `⌘M` and `⌘0` hide, minimise and restore the panel.
@@ -162,9 +164,12 @@ so Computer Use cannot observe, consume or re-emit a key from the user's other
 apps. Production startup remains the floating `CopperPanel` (`NSPanel`) with
 one observational global capture monitor. The panel can become key for its
 text and card controls without becoming the main window. In-app shortcuts use
-native menu/key handlers; production has no local event monitor and never
-reposts input. Custom global shortcuts require Command plus another modifier,
-and Control-Option is rejected because it is the VoiceOver modifier.
+native menu/key handlers; the global monitor never consumes or reposts the
+originating Shift gesture. Capture first reads the source app through
+Accessibility, then uses a transient Command-C plus pasteboard restoration for
+editors that do not expose their selection through AX. Custom global
+shortcuts require Command plus another modifier, and Control-Option is rejected
+because it is the VoiceOver modifier.
 
 The production keyboard route was also exercised against the exact signed
 bundle: `⌘C` copied one selected card without completing it, `⇧⌘C` copied two
@@ -222,7 +227,7 @@ swift test list
 swift test
 ```
 
-It currently executes 21 domain, persistence, formatting, ordering, capture
+It currently executes 45 domain, persistence, formatting, ordering, capture
 cardinality, keyboard-monitor and native-window-shell regression cases. The matching upstream Swift
 Testing 6.3.3 revision is pinned
 as a test-only dependency because this Command Line Tools installation's

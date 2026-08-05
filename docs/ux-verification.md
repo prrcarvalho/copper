@@ -2,6 +2,21 @@
 
 Date: 2026-08-01
 
+Update (2026-08-03): the source/formal contract now adds a persisted **Always
+on Top** setting. It switches the production panel between `.normal` and
+`.floating` level without activation, keying, forced ordering, or Spaces
+changes. The default remains `.normal`; the minimum panel size is now
+`300×360`. Production capture snapshots the application that was frontmost when
+the global gesture arrived, avoiding a later system-wide focus race, searches a
+bounded AX descendant tree for renderer-backed selections, and falls back to a
+transient Command-C with pasteboard restoration when an editor exposes no AX
+selection. The regression seams and AX diagnostic cover these paths.
+`swift test list` discovered 45 tests, `swift test` passed 45/45, `swift build`
+passed, and `git diff --check` was clean. The foreground and cross-application
+observations below remain the 2026-08-01 runtime evidence; the new floating-mode
+interaction and physical Shift+Shift production path have not been re-run as
+intrusive foreground UI checks.
+
 This matrix records evidence for the reconstruction against
 [`docs/product-spec.md`](product-spec.md) and the supplied frames under
 `docs/copper-official/`. It deliberately separates implementation evidence
@@ -45,7 +60,8 @@ invalidation, and the background/production window policy values.
 
 The previous 2026-07-31 signed-bundle diagnostic recorded the old floating,
 nonactivating configuration; that report is historical and is superseded by
-this task's normal-window contract. The current source/formal contract is:
+the 2026-08-01 normal-window contract and the 2026-08-03 update above. The
+2026-08-01 source/formal contract was:
 `activationPolicy=0` (regular), `windowClass=CopperPanel`, no
 `.nonactivatingPanel`, normal level, empty collection behaviour,
 `isFloatingPanel=false`, hidden close/miniaturize/zoom buttons,
@@ -96,8 +112,11 @@ registers only `keyDown`. AppKit global monitors cannot consume or replace an
 event. The previous local event monitor, which returned `nil` for handled Copper
 shortcuts, was removed; native menu/key handlers now own in-app shortcuts.
 Registration is idempotent, termination removes the global monitor, and no code
-posts a replacement event. Formal cases reject modified double-Shift gestures
-and deduplicate repeated matching events.
+posts a replacement for the originating Shift gesture. When AX cannot expose a
+selection, the separate capture fallback may post a transient Command-C to the
+frontmost source app and restores the previous pasteboard contents. Formal
+cases reject modified double-Shift gestures and deduplicate repeated matching
+events.
 
 Foreground observation exposed why an arbitrary modifier is not sufficient:
 `Control-Option-C` reached TextEdit, replaced the selected fixture and left no
@@ -218,9 +237,11 @@ Electron process. Screen Reader Optimized Mode exposed the editor text to AX;
 the selected plain fixture remained selected after capture. The evidence
 recorded exactly one matching note, one `Captured` toast,
 `applicationActive=false`, `keyboardMonitorsInstalled=false`, unchanged
-clipboard and a non-key toast. No user document was touched. The no-AX-
-attributed-text fallback remains covered by the formal converter test rather
-than being claimed as a separate runtime condition.
+clipboard and a non-key toast. No user document was touched. The production
+path now also has a bounded AX-descendant search and a transient
+Command-C/pasteboard-restoration fallback for renderer selections that remain
+inaccessible; this fallback is covered by the pasteboard-change regression seam,
+not claimed as a new foreground runtime observation here.
 
 The authorised production block then exercised the previous exact signed
 floating panel build. It is retained as historical capture evidence and is not

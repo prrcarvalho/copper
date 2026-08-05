@@ -10,7 +10,10 @@ import Foundation
 /// parameters rather than presented as hidden implementation facts.
 public enum CopperWindowGeometry {
     public static let autosaveName = "CopperCompanionPanel"
-    public static let minimumSize = NSSize(width: 320, height: 420)
+    // Keep the queue and composer usable while allowing a more compact panel
+    // for smaller displays and side-by-side work. The scrollable queue gives
+    // the reduced height a graceful fallback when there are many notes.
+    public static let minimumSize = NSSize(width: 300, height: 360)
     public static let initialSize = NSSize(width: 430, height: 760)
     public static let maximumWidth: CGFloat = 620
 
@@ -105,6 +108,14 @@ public final class CopperPanel: NSPanel {
         return true
     }
 
+    /// Applies the optional pinning mode without activating or making Copper
+    /// key. A floating level places the panel above ordinary application
+    /// windows while leaving the normal-level lifecycle untouched when the
+    /// preference is disabled.
+    public func applyAlwaysOnTop(_ enabled: Bool) {
+        level = CopperWindowLifecycleContract.windowLevel(alwaysOnTop: enabled)
+    }
+
     /// Copper's close command hides the companion but deliberately keeps the
     /// global capture monitor alive. Dock/Command-Tab/Command-0 can present it
     /// again without creating a second panel.
@@ -154,9 +165,10 @@ public struct CopperPreferences: Codable, Equatable {
     public var copyShortcut = "⌘C"
     public var copyAsListShortcut = "⇧⌘C"
     public var markDoneShortcut = "Space"
+    public var alwaysOnTop = false
 
     private enum CodingKeys: String, CodingKey {
-        case captureShortcut, copyShortcut, copyAsListShortcut, markDoneShortcut
+        case captureShortcut, copyShortcut, copyAsListShortcut, markDoneShortcut, alwaysOnTop
     }
 
     public init() {}
@@ -167,6 +179,7 @@ public struct CopperPreferences: Codable, Equatable {
         copyShortcut = try values.decodeIfPresent(String.self, forKey: .copyShortcut) ?? "⌘C"
         copyAsListShortcut = try values.decodeIfPresent(String.self, forKey: .copyAsListShortcut) ?? "⇧⌘C"
         markDoneShortcut = try values.decodeIfPresent(String.self, forKey: .markDoneShortcut) ?? "Space"
+        alwaysOnTop = try values.decodeIfPresent(Bool.self, forKey: .alwaysOnTop) ?? false
     }
 
     public var captureShortcutValidationMessage: String? {
@@ -378,9 +391,14 @@ public enum CopperWindowLifecycleContract {
     public static let productionActivationPolicy: NSApplication.ActivationPolicy = .regular
     public static let backgroundUITestActivationPolicy: NSApplication.ActivationPolicy = .accessory
     public static let productionWindowLevel: NSWindow.Level = .normal
+    public static let alwaysOnTopWindowLevel: NSWindow.Level = .floating
     public static let backgroundUITestWindowLevel: NSWindow.Level = .normal
     public static let productionCollectionBehavior: NSWindow.CollectionBehavior = []
     public static let backgroundUITestCollectionBehavior: NSWindow.CollectionBehavior = []
+
+    public static func windowLevel(alwaysOnTop: Bool) -> NSWindow.Level {
+        alwaysOnTop ? alwaysOnTopWindowLevel : productionWindowLevel
+    }
 }
 
 public struct CopperToast: Identifiable {
@@ -891,6 +909,7 @@ public enum CapturedSelectionSource: String {
     case attributedTextMarker
     case plainTextMarker
     case plainSelectedText
+    case clipboardFallback
 }
 
 public struct CapturedSelection {
@@ -1171,11 +1190,82 @@ public enum AccessibilityReader {
     }
 
     private static func selectedSelection(from root: AXUIElement) -> CapturedSelection? {
+        // Most native controls expose the selection on the application's
+        // focused element. Electron/WebKit-based apps sometimes focus their
+        // outer HTML container while the actual text control is a descendant;
+        // try the focused element first, then walk a bounded AX subtree.
+        if let focusedElement = focusedElement(from: root),
+           let selection = selectedSelection(in: focusedElement) {
+            return selection
+        }
+
+        var remainingNodes = 512
+        return firstSelection(
+            in: root,
+            depth: 0,
+            remainingNodes: &remainingNodes
+        )
+    }
+
+    private static func focusedElement(from root: AXUIElement) -> AXUIElement? {
         var focusedValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(root, kAXFocusedUIElementAttribute as CFString, &focusedValue) == .success,
               let focusedValue,
               CFGetTypeID(focusedValue) == AXUIElementGetTypeID() else { return nil }
-        let focusedElement = unsafeBitCast(focusedValue, to: AXUIElement.self)
+        return axElement(from: focusedValue)
+    }
+
+    private static func axElement(from value: CFTypeRef) -> AXUIElement? {
+        guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        // AXUIElement is a Core Foundation object. The type-ID guard makes
+        // this bridge checked; unsafeBitCast is invalid for values arriving
+        // from NSArray because Swift may wrap those objects at a different size.
+        return (value as! AXUIElement)
+    }
+
+    static func axElements(from value: CFTypeRef) -> [AXUIElement] {
+        guard CFGetTypeID(value) == CFArrayGetTypeID(),
+              let array = value as? NSArray else { return [] }
+        var elements: [AXUIElement] = []
+        for child in array {
+            guard let element = axElement(from: child as CFTypeRef) else { continue }
+            elements.append(element)
+        }
+        return elements
+    }
+
+    private static func firstSelection(
+        in element: AXUIElement,
+        depth: Int,
+        remainingNodes: inout Int
+    ) -> CapturedSelection? {
+        guard remainingNodes > 0 else { return nil }
+        remainingNodes -= 1
+
+        if depth > 0, let selection = selectedSelection(in: element) {
+            return selection
+        }
+        guard depth < 8 else { return nil }
+
+        var childrenValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue) == .success,
+              let childrenValue,
+              CFGetTypeID(childrenValue) == CFArrayGetTypeID() else { return nil }
+
+        let children = axElements(from: childrenValue)
+        for child in children {
+            if let selection = firstSelection(
+                in: child,
+                depth: depth + 1,
+                remainingNodes: &remainingNodes
+            ) {
+                return selection
+            }
+        }
+        return nil
+    }
+
+    private static func selectedSelection(in focusedElement: AXUIElement) -> CapturedSelection? {
 
         var frame: NSRect?
         var positionValue: CFTypeRef?
@@ -1329,14 +1419,35 @@ public final class GlobalCaptureMonitor {
     private var lastShiftDown = Date.distantPast
     private var lastTrigger = Date.distantPast
     private var shortcut: CopperShortcut
-    private let onCapture: () -> Void
+    private let sourceApplicationIdentifierProvider: () -> String?
+    private let onCaptureWithSource: (String?) -> Void
 
-    public init(shortcut: String = "Shift + Shift", onCapture: @escaping () -> Void) {
+    public convenience init(shortcut: String = "Shift + Shift", onCapture: @escaping () -> Void) {
+        self.init(
+            shortcut: shortcut,
+            sourceApplicationIdentifierProvider: {
+                NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            },
+            onCaptureWithSource: { _ in onCapture() }
+        )
+    }
+
+    /// Creates a monitor that snapshots the source application at the instant
+    /// the gesture completes. Production uses this overload because the
+    /// callback then hops to Copper's main actor; reading NSWorkspace only
+    /// after that hop can observe Copper instead of the app that owns the
+    /// selection.
+    public init(
+        shortcut: String = "Shift + Shift",
+        sourceApplicationIdentifierProvider: @escaping () -> String?,
+        onCaptureWithSource: @escaping (String?) -> Void
+    ) {
         let parsed = CopperShortcut.parse(shortcut)
         self.shortcut = parsed?.isSafeGlobalCapture == true
             ? parsed!
             : CopperShortcut(trigger: .doubleShift)
-        self.onCapture = onCapture
+        self.sourceApplicationIdentifierProvider = sourceApplicationIdentifierProvider
+        self.onCaptureWithSource = onCaptureWithSource
     }
 
     public func update(shortcut rawValue: String) {
@@ -1358,8 +1469,9 @@ public final class GlobalCaptureMonitor {
             }
         }()
         // AppKit global monitors are observational: unlike a local monitor,
-        // this callback cannot consume or replace the event, and Copper never
-        // posts a synthetic replacement.
+        // this callback cannot consume or replace the originating gesture.
+        // The production capture fallback's separate Command-C is dispatched
+        // only after AX selection lookup fails.
         monitor = NSEvent.addGlobalMonitorForEvents(matching: eventMask) { [weak self] event in
             self?.handle(event)
         }
@@ -1409,7 +1521,10 @@ public final class GlobalCaptureMonitor {
         let now = Date()
         guard now.timeIntervalSince(lastTrigger) > 0.45 else { return }
         lastTrigger = now
-        onCapture()
+        // Capture this before the caller dispatches to its own actor or task.
+        // The global monitor is observational, so this does not activate or
+        // alter the source app; it only records which process owns focus.
+        onCaptureWithSource(sourceApplicationIdentifierProvider())
     }
 
     deinit {

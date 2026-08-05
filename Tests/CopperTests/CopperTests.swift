@@ -16,7 +16,7 @@ struct CopperTests {
     @Test("Production drag strip stays outside the toolbar click band")
     func productionDragStripDoesNotCoverToolbar() {
         let content = CopperPanelContentView(hostingView: NSView())
-        content.setFrameSize(NSSize(width: 320, height: 420))
+        content.setFrameSize(CopperWindowGeometry.minimumSize)
         content.layout()
 
         let dragStrip = content.diagnosticDragStripFrame
@@ -122,9 +122,36 @@ struct CopperTests {
         #expect(CopperWindowLifecycleContract.productionActivationPolicy == .regular)
         #expect(CopperWindowLifecycleContract.backgroundUITestActivationPolicy == .accessory)
         #expect(CopperWindowLifecycleContract.productionWindowLevel == .normal)
+        #expect(CopperWindowLifecycleContract.alwaysOnTopWindowLevel == .floating)
+        #expect(CopperWindowLifecycleContract.windowLevel(alwaysOnTop: false) == .normal)
+        #expect(CopperWindowLifecycleContract.windowLevel(alwaysOnTop: true) == .floating)
         #expect(CopperWindowLifecycleContract.backgroundUITestWindowLevel == .normal)
         #expect(CopperWindowLifecycleContract.productionCollectionBehavior.isEmpty)
         #expect(CopperWindowLifecycleContract.backgroundUITestCollectionBehavior.isEmpty)
+    }
+
+    @Test("Always-on-top changes only the panel level and can be reverted live")
+    func productionPanelAlwaysOnTopLevelIsLiveAndReversible() {
+        let panel = CopperPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 430, height: 760),
+            styleMask: CopperPanel.companionStyleMask,
+            backing: .buffered,
+            defer: false
+        )
+
+        #expect(panel.level == .normal)
+        #expect(!panel.isFloatingPanel)
+        #expect(panel.collectionBehavior.isEmpty)
+
+        panel.applyAlwaysOnTop(true)
+        #expect(panel.level == .floating)
+        #expect(!panel.isFloatingPanel)
+        #expect(panel.collectionBehavior.isEmpty)
+
+        panel.applyAlwaysOnTop(false)
+        #expect(panel.level == .normal)
+        #expect(!panel.isFloatingPanel)
+        #expect(panel.collectionBehavior.isEmpty)
     }
 
     @Test("Production panel keeps native drag, resize, close and minimize affordances")
@@ -194,6 +221,15 @@ struct CopperTests {
         #expect(restored.minY == visible.minY)
         #expect(restored.maxX == visible.minX + 620)
         #expect(restored.maxY == visible.minY + 876)
+    }
+
+    @Test("Companion minimum is compact while preserving a scrollable queue and composer")
+    func companionMinimumSizeIsCompact() {
+        #expect(CopperWindowGeometry.minimumSize.width == 300)
+        #expect(CopperWindowGeometry.minimumSize.height == 360)
+        #expect(CopperWindowGeometry.minimumSize.width < 320)
+        #expect(CopperWindowGeometry.minimumSize.height < 420)
+        #expect(CopperComposerLayout.minimumHeight < CopperWindowGeometry.minimumSize.height)
     }
 
     @Test("Command-W close contract hides without destroying the panel")
@@ -622,6 +658,21 @@ struct CopperTests {
         #expect(reloaded.preferences.markDoneShortcut == "⌘⇧D")
     }
 
+    @Test("Always-on-top preference defaults off and persists")
+    func alwaysOnTopPreferencePersists() {
+        let url = temporaryURL("always-on-top-preferences")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let store = CopperStore(fileURL: url, seedIfEmpty: false)
+        #expect(!store.preferences.alwaysOnTop)
+
+        store.preferences.alwaysOnTop = true
+        store.save()
+
+        let reloaded = CopperStore(fileURL: url, seedIfEmpty: false)
+        #expect(reloaded.preferences.alwaysOnTop)
+    }
+
     @Test("Attributed capture converts emphasis and links with plain fallback")
     func markdownConversion() throws {
         let attributed = NSMutableAttributedString(string: "Bold and link")
@@ -700,6 +751,82 @@ struct CopperTests {
         #expect(note.sectionID == active.id)
         #expect(note.sectionID != first.id)
         #expect(store.notes.filter { $0.id == note.id }.count == 1)
+    }
+
+    @Test("Production capture pins selection lookup to the frontmost source app")
+    func productionCapturePinsFrontmostSourceSelection() {
+        let sourceSelection = CapturedSelection(
+            markdown: "source application selection",
+            sourceFrame: nil
+        )
+        let systemSelection = CapturedSelection(
+            markdown: "system-wide selection",
+            sourceFrame: nil
+        )
+        var requestedApplicationID: String?
+
+        let selected = CopperCaptureSelectionRouting.resolve(
+            preferredApplicationIdentifier: "com.apple.TextEdit",
+            applicationSelection: { applicationIdentifier in
+                requestedApplicationID = applicationIdentifier
+                return sourceSelection
+            },
+            systemSelection: { systemSelection }
+        )
+
+        #expect(requestedApplicationID == "com.apple.TextEdit")
+        #expect(selected?.markdown == sourceSelection.markdown)
+    }
+
+    @Test("Global capture snapshots the source app before the main-actor hop")
+    func globalCaptureSnapshotsSourceApplication() throws {
+        var capturedApplicationIdentifier: String?
+        let monitor = GlobalCaptureMonitor(
+            sourceApplicationIdentifierProvider: { "com.example.source" },
+            onCaptureWithSource: { capturedApplicationIdentifier = $0 }
+        )
+        let firstDown = try #require(shiftEvent(isDown: true, timestamp: 1))
+        let firstUp = try #require(shiftEvent(isDown: false, timestamp: 1.1))
+        let secondDown = try #require(shiftEvent(isDown: true, timestamp: 1.2))
+
+        monitor.processForTesting(firstDown)
+        monitor.processForTesting(firstUp)
+        monitor.processForTesting(secondDown)
+
+        #expect(capturedApplicationIdentifier == "com.example.source")
+        monitor.stop()
+    }
+
+    @Test("Clipboard fallback only accepts text written by the copy request")
+    func clipboardFallbackRequiresPasteboardChange() {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("CopperTests-ClipboardFallback-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.setString("before", forType: .string)
+        let changeCountBefore = pasteboard.changeCount
+
+        #expect(CopperClipboardSelectionFallback.changedText(
+            from: pasteboard,
+            changeCountBefore: changeCountBefore
+        ) == nil)
+
+        pasteboard.clearContents()
+        pasteboard.setString("selected from an editor", forType: .string)
+        #expect(CopperClipboardSelectionFallback.changedText(
+            from: pasteboard,
+            changeCountBefore: changeCountBefore
+        ) == "selected from an editor")
+    }
+
+    @Test("AX child arrays bridge without unsafe pointer casts")
+    func accessibilityChildrenBridgeSafely() {
+        let children = [
+            AXUIElementCreateSystemWide(),
+            AXUIElementCreateSystemWide(),
+        ] as NSArray
+
+        let bridged = AccessibilityReader.axElements(from: children as CFTypeRef)
+
+        #expect(bridged.count == 2)
     }
 
     @Test("Copy and Copy as List preserve display order and list completion")

@@ -18,6 +18,143 @@ struct CopperApp: App {
     }
 }
 
+/// Keeps capture selection lookup tied to the application that was frontmost
+/// when the global gesture arrived. The callback hops onto Copper's main actor
+/// before reading Accessibility state; resolving the source application first
+/// prevents that hop or a floating panel from changing which focused element
+/// the system-wide AX query returns.
+enum CopperCaptureSelectionRouting {
+    static func resolve(
+        preferredApplicationIdentifier: String?,
+        applicationSelection: (String) -> CapturedSelection?,
+        systemSelection: () -> CapturedSelection?
+    ) -> CapturedSelection? {
+        if let preferredApplicationIdentifier,
+           let selection = applicationSelection(preferredApplicationIdentifier) {
+            return selection
+        }
+        return systemSelection()
+    }
+}
+
+/// Some Electron/web editors keep their selection in a renderer that does not
+/// expose `AXSelectedText` (or even a focused text child) to macOS. In that
+/// case the only app-neutral fallback is the same copy action the user could
+/// invoke manually. It is deliberately narrow: the source app must still be
+/// frontmost, the original pasteboard is restored after the read, and the
+/// Shift event itself is never consumed or reposted.
+enum CopperClipboardSelectionFallback {
+    private struct PasteboardSnapshot {
+        let items: [[(NSPasteboard.PasteboardType, Data)]]
+
+        init(pasteboard: NSPasteboard) {
+            items = (pasteboard.pasteboardItems ?? []).map { item in
+                item.types.compactMap { type in
+                    guard let data = item.data(forType: type) else { return nil }
+                    return (type, data)
+                }
+            }
+        }
+
+        func restore(to pasteboard: NSPasteboard) {
+            pasteboard.clearContents()
+            guard !items.isEmpty else { return }
+            let restoredItems = items.map { representations -> NSPasteboardItem in
+                let item = NSPasteboardItem()
+                for (type, data) in representations {
+                    item.setData(data, forType: type)
+                }
+                return item
+            }
+            _ = pasteboard.writeObjects(restoredItems)
+        }
+    }
+
+    /// Returns a non-empty string only when the pasteboard changed after the
+    /// copy request. This small seam keeps the asynchronous bridge testable
+    /// without synthesising keyboard events in unit tests.
+    static func changedText(
+        from pasteboard: NSPasteboard,
+        changeCountBefore: Int
+    ) -> String? {
+        guard pasteboard.changeCount != changeCountBefore else { return nil }
+        let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text?.isEmpty == false ? text : nil
+    }
+
+    static func capture(
+        from sourceApplicationIdentifier: String?,
+        completion: @escaping (String?) -> Void
+    ) {
+        guard let sourceApplicationIdentifier,
+              sourceApplicationIdentifier != Bundle.main.bundleIdentifier,
+              NSWorkspace.shared.frontmostApplication?.bundleIdentifier == sourceApplicationIdentifier else {
+            completion(nil)
+            return
+        }
+
+        let pasteboard = NSPasteboard.general
+        let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
+        let changeCountBefore = pasteboard.changeCount
+        guard postCommandC() else {
+            completion(nil)
+            return
+        }
+
+        pollForCopiedText(
+            pasteboard: pasteboard,
+            snapshot: snapshot,
+            changeCountBefore: changeCountBefore,
+            attempt: 0,
+            completion: completion
+        )
+    }
+
+    private static func pollForCopiedText(
+        pasteboard: NSPasteboard,
+        snapshot: PasteboardSnapshot,
+        changeCountBefore: Int,
+        attempt: Int,
+        completion: @escaping (String?) -> Void
+    ) {
+        if pasteboard.changeCount != changeCountBefore {
+            let text = changedText(from: pasteboard, changeCountBefore: changeCountBefore)
+            if text != nil || attempt >= 10 {
+                snapshot.restore(to: pasteboard)
+                completion(text)
+                return
+            }
+        }
+
+        if attempt >= 10 {
+            completion(nil)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) {
+            pollForCopiedText(
+                pasteboard: pasteboard,
+                snapshot: snapshot,
+                changeCountBefore: changeCountBefore,
+                attempt: attempt + 1,
+                completion: completion
+            )
+        }
+    }
+
+    private static func postCommandC() -> Bool {
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: false) else {
+            return false
+        }
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+        return true
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let store: CopperStore
@@ -105,7 +242,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
             panel.title = "Copper"
             panel.isFloatingPanel = false
-            panel.level = CopperWindowLifecycleContract.productionWindowLevel
+            panel.level = CopperWindowLifecycleContract.windowLevel(
+                alwaysOnTop: store.preferences.alwaysOnTop
+            )
             panel.appearance = NSAppearance(named: .aqua)
             panel.hidesOnDeactivate = false
             panel.becomesKeyOnlyIfNeeded = false
@@ -169,15 +308,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // one observational global capture monitor; in-app shortcuts are normal
         // menu commands/key handlers, never a local event monitor.
         if !backgroundUITest {
-            let monitor = GlobalCaptureMonitor(shortcut: store.preferences.captureShortcut) { [weak self] in
-                Task { @MainActor in self?.handleGlobalCaptureGesture() }
-            }
+            let monitor = GlobalCaptureMonitor(
+                shortcut: store.preferences.captureShortcut,
+                sourceApplicationIdentifierProvider: {
+                    NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                },
+                onCaptureWithSource: { [weak self] sourceApplicationIdentifier in
+                    Task { @MainActor in
+                        self?.handleGlobalCaptureGesture(
+                            frontmostApplicationIdentifier: sourceApplicationIdentifier
+                        )
+                    }
+                }
+            )
             monitor.start()
             captureMonitor = monitor
             preferencesCancellable = store.$preferences
-                .map(\.captureShortcut)
-                .removeDuplicates()
-                .sink { [weak monitor] shortcut in monitor?.update(shortcut: shortcut) }
+                .sink { [weak self, weak monitor] preferences in
+                    monitor?.update(shortcut: preferences.captureShortcut)
+                    self?.applyAlwaysOnTop(preferences.alwaysOnTop)
+                }
         }
         if !backgroundUITest {
             AccessibilityReader.promptForTrustIfNeeded()
@@ -280,6 +430,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    private func applyAlwaysOnTop(_ enabled: Bool) {
+        guard !backgroundUITest, let panel = panel as? CopperPanel else { return }
+        // Changing the level is enough for AppKit to reorder a visible window;
+        // deliberately avoid activation, keying, or orderFrontRegardless so a
+        // settings change cannot steal focus from the user's current app.
+        panel.applyAlwaysOnTop(enabled)
+    }
+
     private func visibleFrame(for window: NSWindow?) -> NSRect {
         guard let window else {
             return (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
@@ -314,13 +472,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @discardableResult
-    private func captureSelectedText(applicationIdentifier: String? = nil) -> (selection: CapturedSelection, note: CopperNote)? {
-        let selected = applicationIdentifier.flatMap(AccessibilityReader.selectedSelection(applicationIdentifier:))
-            ?? AccessibilityReader.selectedSelection()
+    private func captureSelectedText(
+        applicationIdentifier: String? = nil,
+        showFailureToast: Bool = true
+    ) -> (selection: CapturedSelection, note: CopperNote)? {
+        let selected = CopperCaptureSelectionRouting.resolve(
+            preferredApplicationIdentifier: applicationIdentifier,
+            applicationSelection: { identifier in
+                AccessibilityReader.selectedSelection(applicationIdentifier: identifier)
+            },
+            systemSelection: {
+                AccessibilityReader.selectedSelection()
+            }
+        )
         guard let selected else {
-            store.showToast("Select text to capture", kind: .neutral)
+            if showFailureToast {
+                store.showToast("Select text to capture", kind: .neutral)
+            }
             return nil
         }
+        return commitCapture(selected)
+    }
+
+    @discardableResult
+    private func commitCapture(_ selected: CapturedSelection) -> (selection: CapturedSelection, note: CopperNote)? {
         guard let note = store.capture(selected) else {
             store.showToast("Could not capture selection", kind: .error)
             return nil
@@ -335,23 +510,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return (selected, note)
     }
 
-    private func handleGlobalCaptureGesture() {
+    private func handleGlobalCaptureGesture(frontmostApplicationIdentifier: String? = nil) {
         let noteCountBefore = store.notes.count
         let clipboardChangeCountBefore = NSPasteboard.general.changeCount
         let toastPresentationCountBefore = captureToastController?.presentationCount ?? 0
-        let frontmostApplicationBefore = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let frontmostApplicationBefore = frontmostApplicationIdentifier
+            ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         liveCaptureGestureCount += 1
-        let result = captureSelectedText()
-        if result != nil {
+        if let result = captureSelectedText(
+            applicationIdentifier: frontmostApplicationBefore,
+            showFailureToast: false
+        ) {
             liveCaptureSuccessCount += 1
+            writeLiveCaptureDiagnosticIfRequested(
+                result: result,
+                noteCountBefore: noteCountBefore,
+                clipboardChangeCountBefore: clipboardChangeCountBefore,
+                toastPresentationCountBefore: toastPresentationCountBefore,
+                frontmostApplicationBefore: frontmostApplicationBefore
+            )
+            return
         }
-        writeLiveCaptureDiagnosticIfRequested(
-            result: result,
-            noteCountBefore: noteCountBefore,
-            clipboardChangeCountBefore: clipboardChangeCountBefore,
-            toastPresentationCountBefore: toastPresentationCountBefore,
-            frontmostApplicationBefore: frontmostApplicationBefore
-        )
+
+        CopperClipboardSelectionFallback.capture(
+            from: frontmostApplicationBefore
+        ) { [weak self] copiedText in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                var result: (selection: CapturedSelection, note: CopperNote)?
+                if let copiedText,
+                   let markdown = MarkdownConverter.markdown(from: copiedText) {
+                    result = self.commitCapture(CapturedSelection(
+                        markdown: markdown,
+                        sourceFrame: nil,
+                        source: .clipboardFallback
+                    ))
+                }
+                if result == nil {
+                    self.store.showToast("Select text to capture", kind: .neutral)
+                } else {
+                    self.liveCaptureSuccessCount += 1
+                }
+                self.writeLiveCaptureDiagnosticIfRequested(
+                    result: result,
+                    noteCountBefore: noteCountBefore,
+                    clipboardChangeCountBefore: clipboardChangeCountBefore,
+                    toastPresentationCountBefore: toastPresentationCountBefore,
+                    frontmostApplicationBefore: frontmostApplicationBefore
+                )
+            }
+        }
     }
 
     private func writeLiveCaptureDiagnosticIfRequested(
@@ -369,8 +577,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard !outputPath.isEmpty else { return }
 
         // The monitor callback records only counters and state after the normal
-        // capture path has completed. It never consumes, replaces, or reposts
-        // the originating keyboard event.
+        // capture path has completed. The Shift gesture remains observational;
+        // an inaccessible-editor fallback may have posted its separate,
+        // transient Command-C and restored the pasteboard before this report.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             guard let self else { return }
             let frontmostApplicationAfter = NSWorkspace.shared.frontmostApplication?.bundleIdentifier

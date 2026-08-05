@@ -8,17 +8,21 @@ This document applies to the native personal reconstruction in this repository.
   `~/Library/Application Support/Copper-Reconstruction/`.
 - The app has no account, cloud sync, licensing/update service, analytics SDK,
   telemetry, crash-report upload, note-content upload, or network client.
-- macOS Accessibility is used only to read the current selection after the user
-  grants access. The configured capture gesture is observed by one AppKit
-  global monitor, which cannot consume or replace events. The app installs no
-  local event monitor and never synthesises or reposts keyboard input.
+- macOS Accessibility is used first to read the current selection after the
+  user grants access. Editors that do not expose a selection through AX use a
+  narrow fallback that posts a transient Command-C to the still-frontmost
+  source app and restores the previous pasteboard contents immediately. The
+  configured Shift gesture is observed by one AppKit global monitor, which
+  cannot consume or replace that originating event; Copper installs no local
+  event monitor.
 - Because a global monitor cannot prevent the source app from handling the same
   key, custom capture shortcuts require Command plus another modifier.
   Control-Option combinations are rejected as the VoiceOver modifier. This
   reduces source-input interference but cannot prove that a shortcut is unused
   by every third-party application.
-- Clipboard writes are local `NSPasteboard` operations initiated by Copy or
-  Copy as List. Capturing a selection does not write to the clipboard.
+- Clipboard writes are local `NSPasteboard` operations initiated by Copy, Copy
+  as List, or the transient inaccessible-editor capture fallback. The fallback
+  restores the user's previous pasteboard contents before completing capture.
 - The explicit `--capture-diagnostic-output` and
   `--live-capture-diagnostic-output` test routes write the selected test fixture
   and capture/cardinality metadata to a caller-supplied local path. They are

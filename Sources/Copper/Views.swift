@@ -1220,6 +1220,13 @@ struct SettingsView: View {
                     TextField("Mark as Done", text: $store.preferences.markDoneShortcut)
                 }
 
+                Section("Window") {
+                    Toggle("Always on Top", isOn: $store.preferences.alwaysOnTop)
+                    Text("Keep the Copper panel above ordinary app windows without activating Copper or changing Spaces behaviour.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Privacy") {
                     Label("Notes stay on this Mac", systemImage: "lock.shield")
                     Label("The native app sends no analytics, note telemetry, uploads, crash reports, or sync traffic", systemImage: "eye.slash")
@@ -1243,7 +1250,12 @@ struct SettingsView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 18)
         }
-        .frame(width: 500, height: 410)
+        .frame(width: 500, height: 460)
+        .onChange(of: store.preferences.alwaysOnTop) { _, _ in
+            // Persist this preference immediately so the live window-level
+            // change survives even if Settings is dismissed unexpectedly.
+            store.save()
+        }
         .onDisappear { store.save() }
     }
 }

@@ -595,16 +595,20 @@ conversion with Markdown-escaped literal plain fallback, a nonactivating
 selection-positioned toast,
 full-prompt popup editing with double-click/Return opening and a distinct
 Command-Return editor window, a card-like composer,
-accessibility render paths and local-only persistence. Production retains its
-normal-level `CopperPanel`, an `NSPanel` subclass that can become key for text
-and card controls without becoming main. Its only system event monitor is the
+accessibility render paths and local-only persistence. Production defaults to
+a normal-level `CopperPanel`, an `NSPanel` subclass that can become key for text
+and card controls without becoming main. An optional persisted **Always on
+Top** setting changes only the panel level to `.floating`; it does not activate
+Copper or change Spaces behaviour. Its only system event monitor is the
 observational global capture monitor; in-app shortcuts use native menu/key
-handlers, so no local event monitor consumes or replaces input and no code
-reposts events. Custom global shortcuts require Command plus another modifier,
-and Control-Option is rejected as the VoiceOver modifier. This reduces, but
-cannot eliminate, conflicts with shortcuts owned by third-party source apps.
+handlers, and the global monitor does not consume or repost the originating
+Shift gesture. Capture uses Accessibility first, then the transient
+Command-C/pasteboard-restoration fallback for renderer-backed editors. Custom
+global shortcuts require Command plus another modifier, and Control-Option is
+rejected as the VoiceOver modifier. This reduces, but cannot eliminate,
+conflicts with shortcuts owned by third-party source apps.
 
-The formal Swift Testing suite is discovered and executed by SwiftPM (28/28).
+The formal Swift Testing suite is discovered and executed by SwiftPM (45/45).
 Current controlled background evidence covers real rich selections in TextEdit,
 Safari and Chrome. Every final report records exactly one new note, exactly one
 `Captured` toast, a preserved source selection, unchanged clipboard, inactive
@@ -644,10 +648,12 @@ nor hidden one-to-one parity is claimed.
 ## 18. Companion shell polish (2026-07-31)
 
 The reconstruction now uses a regular macOS app with a Dock/Command-Tab
-identity and a normal-level `CopperPanel`. The three standard traffic lights
-are hidden, but the native titled/resizable/closable/miniaturizable style is
-retained. The first-launch frame is `430×760`, the minimum is `320×420`, the
-maximum width is `620`, and saved frames are clamped to the visible screen.
+identity and a `CopperPanel` that is normal-level by default and can optionally
+use `.floating` level through the persisted **Always on Top** setting. The three
+standard traffic lights are hidden, but the native
+titled/resizable/closable/miniaturizable style is retained. The first-launch
+frame is `430×760`, the minimum is `300×360`, the maximum width is `620`, and
+saved frames are clamped to the visible screen.
 `⌘W` hides the panel while keeping capture alive, `⌘M` minimises it, and
 `⌘0`/Dock reopen it. These shell improvements are implementation choices for
 the personal reconstruction; the public evidence does not determine whether
